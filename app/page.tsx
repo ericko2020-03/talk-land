@@ -1,17 +1,12 @@
 // path: app/page.tsx
 import Link from "next/link";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-type PostFeedItem = Prisma.PostGetPayload<{
-  include: {
-    author: true;
-    _count: { select: { comments: true; likes: true; media: true } };
-  };
-}>;
+type PostsQuery = Parameters<typeof prisma.post.findMany>[0];
+type PostFeedItem = Awaited<ReturnType<typeof prisma.post.findMany>>[number];
 
 export default async function HomePage() {
-  const posts: PostFeedItem[] = await prisma.post.findMany({
+  const query: PostsQuery = {
     where: { deletedAt: null, visibility: "PUBLIC" },
     orderBy: { createdAt: "desc" },
     include: {
@@ -19,7 +14,9 @@ export default async function HomePage() {
       _count: { select: { comments: true, likes: true, media: true } },
     },
     take: 50,
-  });
+  };
+
+  const posts: PostFeedItem[] = await prisma.post.findMany(query);
 
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-6">
