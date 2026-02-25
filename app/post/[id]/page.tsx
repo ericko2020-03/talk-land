@@ -8,6 +8,53 @@ import CommentForm from "./CommentForm";
 type PostDetail = Awaited<ReturnType<typeof prisma.post.findFirst>>;
 type CommentItem = NonNullable<PostDetail>["comments"][number];
 
+function getYouTubeVideoId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+
+    // youtu.be/<id>
+    if (host === "youtu.be") {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      return id ? id : null;
+    }
+
+    // youtube.com/*
+    if (host === "youtube.com" || host.endsWith(".youtube.com")) {
+      // /watch?v=<id>
+      if (u.pathname === "/watch") {
+        const id = u.searchParams.get("v");
+        return id ? id : null;
+      }
+
+      // /shorts/<id>
+      if (u.pathname.startsWith("/shorts/")) {
+        const id = u.pathname.split("/").filter(Boolean)[1];
+        return id ? id : null;
+      }
+
+      // /embed/<id>
+      if (u.pathname.startsWith("/embed/")) {
+        const id = u.pathname.split("/").filter(Boolean)[1];
+        return id ? id : null;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
+  if (!youtubeUrl) return null;
+  const id = getYouTubeVideoId(youtubeUrl);
+  if (!id) return null;
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+    id
+  )}?rel=0&modestbranding=1`;
+}
+
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getServerSession(authOptions);
@@ -51,6 +98,8 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
     );
   }
 
+  const embedUrl = getYouTubeEmbedUrl(post.youtubeUrl);
+
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-6">
       <header className="flex items-center justify-between">
@@ -58,11 +107,11 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
           ← 回首頁
         </Link>
         <div className="text-sm text-neutral-500">
-          💬 {post._count.comments} · ❤️ {post._count.likes} · 🖼️ {post._count.media}
+          💬 {post._count.comments} · ❤️ {post._count.likes} · 📎 {post._count.media}
         </div>
       </header>
 
-      <article className="rounded border p-4 space-y-2">
+      <article className="rounded border p-4 space-y-3">
         <div className="text-sm text-neutral-500">
           {post.author?.name ?? post.author?.email ?? "Unknown"} ·{" "}
           {new Date(post.createdAt).toLocaleString("zh-TW")}
@@ -72,9 +121,25 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
 
         <div className="whitespace-pre-wrap">{post.content}</div>
 
+        {embedUrl ? (
+          <div className="rounded border overflow-hidden">
+            <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
+              <iframe
+                className="absolute inset-0 h-full w-full"
+                src={embedUrl}
+                title="YouTube video"
+                loading="lazy"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        ) : null}
+
         {post.youtubeUrl ? (
           <a className="text-sm underline" href={post.youtubeUrl} target="_blank" rel="noreferrer">
-            YouTube 連結
+            YouTube 連結（外開）
           </a>
         ) : null}
       </article>
