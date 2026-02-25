@@ -5,11 +5,14 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import CommentForm from "./CommentForm";
 
+type PostDetail = Awaited<ReturnType<typeof prisma.post.findFirst>>;
+type CommentItem = NonNullable<PostDetail>["comments"][number];
+
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getServerSession(authOptions);
 
-  const post = await prisma.post.findFirst({
+  const post: PostDetail = await prisma.post.findFirst({
     where: { id, deletedAt: null },
     include: {
       author: true,
@@ -27,7 +30,9 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
     return (
       <main className="mx-auto max-w-2xl p-6 space-y-4">
         <div>找不到貼文</div>
-        <Link className="underline" href="/">回首頁</Link>
+        <Link className="underline" href="/">
+          回首頁
+        </Link>
       </main>
     );
   }
@@ -39,7 +44,9 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
         <Link className="underline" href={`/api/auth/signin?callbackUrl=/post/${post.id}`}>
           登入後查看
         </Link>
-        <Link className="underline" href="/">回首頁</Link>
+        <Link className="underline" href="/">
+          回首頁
+        </Link>
       </main>
     );
   }
@@ -47,7 +54,9 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-6">
       <header className="flex items-center justify-between">
-        <Link className="underline" href="/">← 回首頁</Link>
+        <Link className="underline" href="/">
+          ← 回首頁
+        </Link>
         <div className="text-sm text-neutral-500">
           💬 {post._count.comments} · ❤️ {post._count.likes} · 🖼️ {post._count.media}
         </div>
@@ -79,7 +88,7 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
           {post.comments.length === 0 ? (
             <div className="text-neutral-500">目前還沒有留言。</div>
           ) : (
-            post.comments.map((c) => (
+            post.comments.map((c: CommentItem) => (
               <div key={c.id} className="rounded border p-3">
                 <div className="text-sm text-neutral-500">
                   {c.author?.name ?? c.author?.email ?? "Unknown"} ·{" "}
