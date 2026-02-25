@@ -4,7 +4,13 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-export default function CommentForm({ postId, signedIn }: { postId: string; signedIn: boolean }) {
+export default function CommentForm({
+  postId,
+  signedIn,
+}: {
+  postId: string;
+  signedIn: boolean;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -13,22 +19,22 @@ export default function CommentForm({ postId, signedIn }: { postId: string; sign
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!content.trim()) return;
+    const text = content.trim();
+    if (!text) return;
 
     setSubmitting(true);
     try {
       const res = await fetch(`/api/posts/${postId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: content.trim() }),
+        body: JSON.stringify({ content: text }),
       });
 
       if (res.ok) {
         setContent("");
 
-        // 體感：留言成功後自動回首頁，並刷新以確保看到最新留言數
+        // ✅ 留在本頁：只 refresh，不做任何 push/導頁
         startTransition(() => {
-          router.push("/");
           router.refresh();
         });
         return;
@@ -44,7 +50,10 @@ export default function CommentForm({ postId, signedIn }: { postId: string; sign
   if (!signedIn) {
     return (
       <div className="text-sm">
-        <a className="underline" href={`/api/auth/signin?callbackUrl=/post/${postId}`}>
+        <a
+          className="underline"
+          href={`/api/auth/signin?callbackUrl=/post/${postId}`}
+        >
           登入
         </a>{" "}
         後即可留言。
