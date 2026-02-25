@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assertAdmin, assertActive } from "@/lib/rbac";
+import DeletePostButton from "./DeletePostButton";
 
 type PostsQuery = Parameters<typeof prisma.post.findMany>[0];
 type PostAdminItem = Awaited<ReturnType<typeof prisma.post.findMany>>[number];
@@ -83,29 +84,7 @@ export default async function AdminPostsPage() {
                   編輯
                 </Link>
 
-                <form
-                  action={`/api/admin/posts/${p.id}`}
-                  method="post"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!confirm("確定要刪除這篇貼文嗎？")) return;
-
-                    fetch(`/api/admin/posts/${p.id}`, { method: "DELETE" })
-                      .then(async (r) => {
-                        if (!r.ok) {
-                          const data = await r.json().catch(() => ({}));
-                          alert(data?.error ?? "刪除失敗");
-                          return;
-                        }
-                        window.location.reload();
-                      })
-                      .catch(() => alert("刪除失敗"));
-                  }}
-                >
-                  <button className="underline text-red-600" type="submit">
-                    刪除
-                  </button>
-                </form>
+                <DeletePostButton postId={p.id} />
               </div>
             </article>
           ))
