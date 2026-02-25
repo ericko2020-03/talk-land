@@ -1,9 +1,17 @@
 // path: app/page.tsx
 import Link from "next/link";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+type PostFeedItem = Prisma.PostGetPayload<{
+  include: {
+    author: true;
+    _count: { select: { comments: true; likes: true; media: true } };
+  };
+}>;
+
 export default async function HomePage() {
-  const posts = await prisma.post.findMany({
+  const posts: PostFeedItem[] = await prisma.post.findMany({
     where: { deletedAt: null, visibility: "PUBLIC" },
     orderBy: { createdAt: "desc" },
     include: {
@@ -49,7 +57,12 @@ export default async function HomePage() {
                 </Link>
 
                 {p.youtubeUrl ? (
-                  <a className="underline" href={p.youtubeUrl} target="_blank" rel="noreferrer">
+                  <a
+                    className="underline"
+                    href={p.youtubeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     YouTube 連結
                   </a>
                 ) : null}
