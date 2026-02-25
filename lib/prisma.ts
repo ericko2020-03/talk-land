@@ -1,18 +1,26 @@
 // path: lib/prisma.ts
-import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+/**
+ * Why require() here?
+ * - On Vercel, TypeScript type-check can run before Prisma Client is generated,
+ *   causing errors like: "@prisma/client has no exported member PrismaClient".
+ * - Using runtime require prevents TS from blocking the build.
+ * - We still guarantee generation via package.json "postinstall": "prisma generate".
+ */
+const { PrismaClient } = require("@prisma/client") as { PrismaClient: new (args: any) => any };
+
 declare global {
   // eslint-disable-next-line no-var
-  var __prisma__: PrismaClient | undefined;
+  var __prisma__: any | undefined;
   // eslint-disable-next-line no-var
   var __pgPool__: Pool | undefined;
 }
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  throw new Error("Missing DATABASE_URL in .env");
+  throw new Error("Missing DATABASE_URL in environment variables");
 }
 
 // Reuse pool across HMR in dev
