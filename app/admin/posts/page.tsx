@@ -6,6 +6,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assertAdmin, assertActive } from "@/lib/rbac";
 
+type PostsQuery = Parameters<typeof prisma.post.findMany>[0];
+type PostAdminItem = Awaited<ReturnType<typeof prisma.post.findMany>>[number];
+
 function previewText(content: string, n = 120) {
   const s = (content ?? "").replace(/\s+/g, " ").trim();
   return s.length > n ? `${s.slice(0, n)}…` : s;
@@ -28,7 +31,7 @@ export default async function AdminPostsPage() {
     redirect("/");
   }
 
-  const posts = await prisma.post.findMany({
+  const query: PostsQuery = {
     where: { deletedAt: null },
     orderBy: { createdAt: "desc" },
     include: {
@@ -36,7 +39,9 @@ export default async function AdminPostsPage() {
       _count: { select: { comments: true, likes: true, media: true } },
     },
     take: 200,
-  });
+  };
+
+  const posts: PostAdminItem[] = await prisma.post.findMany(query);
 
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-6">
@@ -82,9 +87,8 @@ export default async function AdminPostsPage() {
                   action={`/api/admin/posts/${p.id}`}
                   method="post"
                   onSubmit={(e) => {
-                    // 讓瀏覽器送出 DELETE via fetch（避免 HTML form 不支援 DELETE）
                     e.preventDefault();
-                    if (!confirm("確定要刪除這篇貼文嗎？（可復原需另外做）")) return;
+                    if (!confirm("確定要刪除這篇貼文嗎？")) return;
 
                     fetch(`/api/admin/posts/${p.id}`, { method: "DELETE" })
                       .then(async (r) => {
@@ -93,7 +97,6 @@ export default async function AdminPostsPage() {
                           alert(data?.error ?? "刪除失敗");
                           return;
                         }
-                        // 直接刷新目前頁面（後台列表）
                         window.location.reload();
                       })
                       .catch(() => alert("刪除失敗"));
