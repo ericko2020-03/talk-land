@@ -47,14 +47,9 @@ export default async function HomePage() {
           )}
 
           {isAdmin ? (
-            <>
-              <Link className="underline" href="/admin/posts">
-                後台文章管理
-              </Link>
-              <Link className="underline" href="/admin/posts/new">
-                後台發文
-              </Link>
-            </>
+            <Link className="underline" href="/admin/posts">
+              後台管理
+            </Link>
           ) : null}
         </nav>
       </header>
