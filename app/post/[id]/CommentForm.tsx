@@ -1,9 +1,13 @@
 // path: app/post/[id]/CommentForm.tsx
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 export default function CommentForm({ postId, signedIn }: { postId: string; signedIn: boolean }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -16,12 +20,17 @@ export default function CommentForm({ postId, signedIn }: { postId: string; sign
       const res = await fetch(`/api/posts/${postId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: content.trim() }),
       });
 
       if (res.ok) {
         setContent("");
-        window.location.reload(); // v1.1 demo：最穩
+
+        // 體感：留言成功後自動回首頁，並刷新以確保看到最新留言數
+        startTransition(() => {
+          router.push("/");
+          router.refresh();
+        });
         return;
       }
 
@@ -52,11 +61,11 @@ export default function CommentForm({ postId, signedIn }: { postId: string; sign
         onChange={(e) => setContent(e.target.value)}
       />
       <button
-        disabled={submitting}
+        disabled={submitting || isPending}
         className="rounded bg-black px-4 py-2 text-white disabled:opacity-60"
         type="submit"
       >
-        送出留言
+        {submitting || isPending ? "送出中..." : "送出留言"}
       </button>
     </form>
   );

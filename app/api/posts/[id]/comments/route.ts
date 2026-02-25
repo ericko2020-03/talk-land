@@ -1,5 +1,6 @@
 // path: app/api/posts/[id]/comments/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -30,7 +31,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   try {
     assertActive(status);
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "FORBIDDEN" }, { status: e?.statusCode ?? 403 });
+    return NextResponse.json(
+      { error: e?.message ?? "FORBIDDEN" },
+      { status: e?.statusCode ?? 403 }
+    );
   }
 
   const body = await req.json().catch(() => ({}));
@@ -57,6 +61,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     },
     include: { author: true },
   });
+
+  // Invalidate pages that show comment counts
+  revalidatePath("/");
+  revalidatePath(`/post/${postId}`);
 
   return NextResponse.json(comment);
 }
