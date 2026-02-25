@@ -15,6 +15,54 @@ function visibilityIcon(v: "PUBLIC" | "LOGIN_ONLY") {
   return v === "PUBLIC" ? "🌍" : "👥";
 }
 
+function getYouTubeVideoId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+
+    // youtu.be/<id>
+    if (host === "youtu.be") {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      return id ? id : null;
+    }
+
+    // youtube.com/*
+    if (host === "youtube.com" || host.endsWith(".youtube.com")) {
+      // /watch?v=<id>
+      if (u.pathname === "/watch") {
+        const id = u.searchParams.get("v");
+        return id ? id : null;
+      }
+
+      // /shorts/<id>
+      if (u.pathname.startsWith("/shorts/")) {
+        const id = u.pathname.split("/").filter(Boolean)[1];
+        return id ? id : null;
+      }
+
+      // /embed/<id>
+      if (u.pathname.startsWith("/embed/")) {
+        const id = u.pathname.split("/").filter(Boolean)[1];
+        return id ? id : null;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
+  if (!youtubeUrl) return null;
+  const id = getYouTubeVideoId(youtubeUrl);
+  if (!id) return null;
+  // nocookie + modestbranding 讓嵌入較乾淨
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+    id
+  )}?rel=0&modestbranding=1`;
+}
+
 export default async function HomePage() {
   const session = await getServerSession(authOptions);
   const signedIn = !!session?.user;
@@ -71,22 +119,77 @@ export default async function HomePage() {
 
       <section className="space-y-4">
         {posts.length === 0 ? (
-          <div className="text-neutral-500">目前還沒有{signedIn ? "貼文" : "公開貼文"}。</div>
+          <div className="text-neutral-500">
+            目前還沒有{signedIn ? "貼文" : "公開貼文"}。
+          </div>
         ) : (
           posts.map((p) => {
             const likedByMe = signedIn ? (p as any).likes?.length > 0 : false;
+            const embedUrl = getYouTubeEmbedUrl(p.youtubeUrl);
 
             return (
-              <article key={p.id} className="rounded border p-4 space-y-2">
-                <div className="text-sm text-neutral-500">
+              <article key={p.id} className="rounded border p-4 space-y-3">
+                {/* Author + time as primary navigation entry */}
+                <Link
+                  href={`/post/${p.id}`}
+                  className="block text-sm text-neutral-500 hover:underline"
+                >
                   {p.author?.name ?? p.author?.email ?? "Unknown"} ·{" "}
-                  {new Date(p.createdAt).toLocaleString("zh-TW")}
+                  {new Date(p.createdAt).toLocaleString("zh-TW")} ·{" "}
+                  <span title={p.visibility}>
+                    {visibilityIcon(p.visibility as any)}
+                  </span>
+                </Link>
+
+                {/* Content preview: clamp to 5 lines */}
+                <div
+                  className="whitespace-pre-wrap"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 5,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {p.content}
                 </div>
 
-                <div className="whitespace-pre-wrap">{p.content}</div>
+                {/* YouTube embed (if present) */}
+                {embedUrl ? (
+                  <div className="rounded border overflow-hidden">
+                    <div
+                      className="relative w-full"
+                      style={{ paddingTop: "56.25%" }}
+                    >
+                      <iframe
+                        className="absolute inset-0 h-full w-full"
+                        src={embedUrl}
+                        title="YouTube video"
+                        loading="lazy"
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
+                {/* CTA */}
+                <div className="text-sm">
+                  <Link
+                    href={`/post/${p.id}`}
+                    className="text-neutral-700 hover:underline"
+                  >
+                    查看全文與留言 →
+                  </Link>
+                </div>
+
+                {/* Icon row: avoid always-on underline to remove the stray line */}
                 <div className="flex items-center gap-4 text-sm">
-                  <Link className="underline" href={`/post/${p.id}`}>
+                  <Link
+                    href={`/post/${p.id}`}
+                    className="inline-flex items-center gap-1 text-neutral-700 hover:underline"
+                  >
                     💬 <span className="text-neutral-600">{p._count.comments}</span>
                   </Link>
 
@@ -97,18 +200,21 @@ export default async function HomePage() {
                     initialCount={p._count.likes}
                   />
 
-                  {/* 媒體/附件：目前代表 PostMedia 數量 */}
-                  <span className="inline-flex items-center gap-1" title="附件 / 媒體數量">
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title="附件 / 媒體數量"
+                  >
                     📎 <span className="text-neutral-600">{p._count.media}</span>
                   </span>
 
-                  {/* 可見性 icon */}
-                  <span className="inline-flex items-center gap-1" title={p.visibility}>
-                    {visibilityIcon(p.visibility as any)}
-                  </span>
-
                   {p.youtubeUrl ? (
-                    <a className="underline" href={p.youtubeUrl} target="_blank" rel="noreferrer">
+                    <a
+                      className="text-neutral-700 hover:underline"
+                      href={p.youtubeUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="YouTube 外開"
+                    >
                       YouTube
                     </a>
                   ) : null}
