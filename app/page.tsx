@@ -13,6 +13,7 @@ type PostFeedItem = Awaited<ReturnType<typeof prisma.post.findMany>>[number];
 export default async function HomePage() {
   const session = await getServerSession(authOptions);
   const signedIn = !!session?.user;
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
 
   const query: PostsQuery = {
     where: {
@@ -33,6 +34,7 @@ export default async function HomePage() {
     <main className="mx-auto max-w-2xl p-6 space-y-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Allensay_s 社群</h1>
+
         <nav className="flex items-center gap-4 text-sm">
           {signedIn ? (
             <Link className="underline" href="/api/auth/signout?callbackUrl=/">
@@ -43,9 +45,17 @@ export default async function HomePage() {
               登入
             </Link>
           )}
-          <Link className="underline" href="/admin/posts/new">
-            後台發文
-          </Link>
+
+          {isAdmin ? (
+            <>
+              <Link className="underline" href="/admin/posts">
+                後台文章管理
+              </Link>
+              <Link className="underline" href="/admin/posts/new">
+                後台發文
+              </Link>
+            </>
+          ) : null}
         </nav>
       </header>
 
