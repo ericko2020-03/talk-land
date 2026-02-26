@@ -2,7 +2,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 type Visibility = "PUBLIC" | "LOGIN_ONLY";
 
@@ -18,8 +18,17 @@ function normalizeYoutubeUrl(input: string) {
   const s = (input ?? "").trim();
   return s.length > 0 ? s : null;
 }
+
 function isImage(file: File) {
   return file.type.startsWith("image/");
+}
+
+function safeJsonParse(text: string) {
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return null;
+  }
 }
 
 export default function PostForm() {
@@ -42,7 +51,13 @@ export default function PostForm() {
 
   const canSubmit = useMemo(() => content.trim().length > 0, [content]);
 
+  // ✅ previews with revoke to avoid memory leak
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  useEffect(() => {
+    return () => {
+      for (const url of previews) URL.revokeObjectURL(url);
+    };
+  }, [previews]);
 
   function onPickFiles(inputFiles: FileList | null) {
     if (!inputFiles) return;
@@ -61,12 +76,14 @@ export default function PostForm() {
       return;
     }
 
-    if (picked.length > MAX_FILES) {
-      alert(`每篇最多上傳 ${MAX_FILES} 張`);
+    // ✅ 允許追加，但總數仍不得超過 MAX_FILES
+    const combined = [...files, ...picked];
+    if (combined.length > MAX_FILES) {
+      alert(`每篇最多上傳 ${MAX_FILES} 張（你目前已選 ${files.length} 張，本次又選 ${picked.length} 張）`);
       return;
     }
 
-    setFiles(picked);
+    setFiles(combined);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -88,22 +105,27 @@ export default function PostForm() {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const text = await res.text();
+      const data = safeJsonParse(text) ?? {};
 
       if (!res.ok) {
-        const code = data?.error ?? res.status;
+        const code = (data as any)?.error ?? res.status;
 
         if (res.status === 401) setError("尚未登入，請重新登入後再試。");
         else if (res.status === 403) setError("權限不足或帳號已被停用。");
         else setError(`發文失敗：${code}`);
 
+        console.error("[create post] failed", res.status, text);
         return;
       }
 
       // ✅ 需要後端回傳 { id: post.id }，才能開始上傳圖片
-      const newId = String(data?.id ?? "").trim();
+      const newId = String((data as any)?.id ?? "").trim();
       if (!newId) {
-        setError("發文成功，但 API 沒有回傳貼文 id（需要 id 才能上傳圖片）。請調整 /api/admin/posts 回傳格式。");
+        setError(
+          "發文成功，但 API 沒有回傳貼文 id（需要 id 才能上傳圖片）。請調整 /api/admin/posts 回傳格式。"
+        );
+        console.error("[create post] ok but missing id", text);
         return;
       }
 
@@ -114,8 +136,10 @@ export default function PostForm() {
       startTransition(() => {
         router.refresh();
       });
-    } catch {
-      setError("網路或伺服器連線失敗，請稍後再試。");
+    } catch (err) {
+      console.error("[create post] threw", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`網路或伺服器連線失敗：${msg}`);
     }
   }
 
@@ -131,45 +155,72 @@ export default function PostForm() {
     setUploading(true);
 
     try {
+      console.log("[uploadImages] postId =", createdPostId, "files =", files.length);
+
       const uploaded: { url: string; type: string; sortOrder: number }[] = [];
 
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
 
         // 1) presign
-        const presignRes = await fetch("/api/uploads/r2/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            postId: createdPostId,
-            filename: f.name,
-            contentType: f.type,
-            size: f.size,
-          }),
-        });
+        let presignRes: Response;
+        try {
+          presignRes = await fetch("/api/uploads/r2/presign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              postId: createdPostId,
+              filename: f.name,
+              contentType: f.type,
+              size: f.size,
+            }),
+          });
+        } catch (err) {
+          console.error("[presign] fetch threw:", err);
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(`(presign) 網路錯誤：${msg}`);
+          return;
+        }
 
-        const presignData: Partial<PresignResponse> = await presignRes.json().catch(() => ({}));
+        const presignText = await presignRes.text();
+        const presignJson = safeJsonParse(presignText);
+        const presignData: any = presignJson ?? {};
+
         if (!presignRes.ok) {
-          setError(`取得上傳授權失敗：${(presignData as any)?.error ?? presignRes.status}`);
+          console.error("[presign] failed:", presignRes.status, presignText);
+          setError(
+            `(presign) 失敗：HTTP ${presignRes.status} / ${presignData?.error ?? presignText ?? "unknown"}`
+          );
           return;
         }
 
         const uploadUrl = String(presignData?.uploadUrl ?? "");
         const publicUrl = String(presignData?.publicUrl ?? "");
         if (!uploadUrl || !publicUrl) {
-          setError("上傳授權回傳格式錯誤");
+          console.error("[presign] bad payload:", presignData);
+          setError("(presign) 回傳缺 uploadUrl/publicUrl");
           return;
         }
 
         // 2) PUT to R2
-        const putRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": f.type },
-          body: f,
-        });
+        let putRes: Response;
+        try {
+          putRes = await fetch(uploadUrl, {
+            method: "PUT",
+            // ⚠️ 若你之後發現是簽名不匹配，可先把這行拿掉測試：
+            headers: { "Content-Type": f.type },
+            body: f,
+          });
+        } catch (err) {
+          console.error("[PUT] threw (likely CORS):", err);
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(`(PUT) 上傳到 R2 被瀏覽器擋下：${msg}（常見為 CORS）`);
+          return;
+        }
 
         if (!putRes.ok) {
-          setError(`上傳到 R2 失敗：HTTP ${putRes.status}`);
+          console.error("[PUT] failed:", putRes.status);
+          setError(`(PUT) 上傳到 R2 失敗：HTTP ${putRes.status}`);
           return;
         }
 
@@ -187,9 +238,13 @@ export default function PostForm() {
         body: JSON.stringify({ items: uploaded }),
       });
 
-      const attachData = await attachRes.json().catch(() => ({}));
+      const attachText = await attachRes.text();
+      const attachJson = safeJsonParse(attachText);
+      const attachData: any = attachJson ?? {};
+
       if (!attachRes.ok) {
-        setError(`寫入附件資料失敗：${attachData?.error ?? attachRes.status}`);
+        console.error("[attach] failed:", attachRes.status, attachText);
+        setError(`(attach) 失敗：HTTP ${attachRes.status} / ${attachData?.error ?? attachText ?? "unknown"}`);
         return;
       }
 
@@ -197,8 +252,10 @@ export default function PostForm() {
       startTransition(() => {
         router.refresh();
       });
-    } catch {
-      setError("上傳過程發生錯誤，請稍後再試。");
+    } catch (err) {
+      console.error("[uploadImages] unexpected:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`上傳流程未預期錯誤：${msg}`);
     } finally {
       setUploading(false);
     }
@@ -208,9 +265,7 @@ export default function PostForm() {
     <div className="space-y-8">
       <form onSubmit={handleSubmit} className="space-y-3">
         {error ? (
-          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
         ) : null}
 
         {created ? (
@@ -313,14 +368,29 @@ export default function PostForm() {
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={uploadImages}
-                disabled={uploading || !createdPostId}
-                className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-              >
-                {uploading ? "上傳中..." : "上傳圖片"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={uploadImages}
+                  disabled={uploading || !createdPostId}
+                  className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+                >
+                  {uploading ? "上傳中..." : "上傳圖片"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFiles([])}
+                  disabled={uploading}
+                  className="rounded border px-4 py-2 text-sm disabled:opacity-50"
+                >
+                  清空已選
+                </button>
+              </div>
+
+              <div className="text-xs text-neutral-500">
+                若你看到 (PUT) 被瀏覽器擋下（Failed to fetch），幾乎是 R2 CORS 或 presign 簽名條件不一致造成。
+              </div>
             </div>
           ) : null}
         </div>
