@@ -40,18 +40,20 @@ export async function POST(req: NextRequest) {
 
   const post = await prisma.post.create({
     data: {
-      authorId: (session.user as any).id,
+      authorId: String((session.user as any).id),
       content,
       youtubeUrl,
       visibility,
     },
+    select: { id: true },
   });
 
   // Invalidate cached pages after mutation
-  // - Home feed
   revalidatePath("/");
-  // - Post detail page
   revalidatePath(`/post/${post.id}`);
+  revalidatePath("/admin/posts");
+  revalidatePath("/admin/posts/new");
 
-  return NextResponse.json(post);
+  // ✅ 關鍵：只回傳 id，讓前端拿來解鎖「選擇圖片」並做 attach
+  return NextResponse.json({ id: post.id }, { status: 201 });
 }
