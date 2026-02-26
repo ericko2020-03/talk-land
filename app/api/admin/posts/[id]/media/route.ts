@@ -8,7 +8,7 @@ import { assertActive, assertAdmin } from "@/lib/rbac";
 
 type MediaItemInput = {
   url: string;
-  type?: string; // default "IMAGE"
+  type?: string; // phase 1: only IMAGE
   sortOrder?: number;
 };
 
@@ -51,18 +51,26 @@ export async function POST(
   const guard = await requireAdmin();
   if (!guard.ok) return guard.res;
 
-  const body = await req.json().catch(() => ({}));
-  const itemsRaw = Array.isArray(body?.items) ? body.items : [];
+  const body: unknown = await req.json().catch(() => ({}));
+
+  const itemsRaw: unknown[] =
+    body && typeof body === "object" && Array.isArray((body as any).items)
+      ? ((body as any).items as unknown[])
+      : [];
+
   const items: MediaItemInput[] = itemsRaw
-    .map((x: any) => ({
-      url: String(x?.url ?? "").trim(),
-      type: String(x?.type ?? "IMAGE").trim(),
-      sortOrder:
-        typeof x?.sortOrder === "number" && Number.isFinite(x.sortOrder)
-          ? x.sortOrder
-          : 0,
-    }))
-    .filter((x) => !!x.url);
+    .map((it: unknown): MediaItemInput => {
+      const x = (it ?? {}) as any;
+      return {
+        url: String(x?.url ?? "").trim(),
+        type: String(x?.type ?? "IMAGE").trim(),
+        sortOrder:
+          typeof x?.sortOrder === "number" && Number.isFinite(x.sortOrder)
+            ? x.sortOrder
+            : 0,
+      };
+    })
+    .filter((x: MediaItemInput) => x.url.length > 0);
 
   if (items.length === 0) {
     return NextResponse.json({ error: "NO_ITEMS" }, { status: 400 });
@@ -77,7 +85,6 @@ export async function POST(
     return NextResponse.json({ error: "POST_NOT_FOUND" }, { status: 404 });
   }
 
-  // count existing images
   const existingCount = await prisma.postMedia.count({
     where: { postId },
   });
@@ -96,14 +103,16 @@ export async function POST(
     );
   }
 
-  // only allow IMAGE in phase 1
-  const badType = items.find((x) => String(x.type).toUpperCase() !== "IMAGE");
+  // phase 1: only allow IMAGE
+  const badType = items.find(
+    (x: MediaItemInput) => String(x.type).toUpperCase() !== "IMAGE"
+  );
   if (badType) {
     return NextResponse.json({ error: "ONLY_IMAGE_ALLOWED" }, { status: 400 });
   }
 
   await prisma.postMedia.createMany({
-    data: items.map((it) => ({
+    data: items.map((it: MediaItemInput) => ({
       postId,
       type: "IMAGE",
       url: it.url,
