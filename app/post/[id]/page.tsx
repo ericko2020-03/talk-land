@@ -62,7 +62,23 @@ function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
 
 function looksLikeImageUrl(url: string) {
   const u = url.toLowerCase();
-  return u.endsWith(".jpg") || u.endsWith(".jpeg") || u.endsWith(".png") || u.endsWith(".webp") || u.endsWith(".gif");
+  return (
+    u.endsWith(".jpg") ||
+    u.endsWith(".jpeg") ||
+    u.endsWith(".png") ||
+    u.endsWith(".webp") ||
+    u.endsWith(".gif")
+  );
+}
+
+function visibilityIcon(v: string) {
+  const vv = String(v || "").toUpperCase();
+  // 對應你後台下拉：公開 / 會員 / 封鎖 / 草稿
+  if (vv === "PUBLIC") return { icon: "🌍", title: "公開" };
+  if (vv === "LOGIN_ONLY") return { icon: "👥", title: "會員" }; // DB 仍是 LOGIN_ONLY
+  if (vv === "ADMIN_ONLY") return { icon: "🔒", title: "封鎖（僅 Admin）" };
+  if (vv === "ADMIN_DRAFT") return { icon: "📝", title: "草稿（僅 Admin）" };
+  return { icon: "❓", title: vv || "UNKNOWN" };
 }
 
 export default async function PostPage({
@@ -114,10 +130,11 @@ export default async function PostPage({
     );
   }
 
+  // 會員可見：未登入則擋
   if (post.visibility === "LOGIN_ONLY" && !signedIn) {
     return (
       <main className="mx-auto max-w-2xl p-6 space-y-4">
-        <div className="text-neutral-700">此貼文僅登入可見。</div>
+        <div className="text-neutral-700">此貼文僅會員可見。</div>
         <Link
           className="underline"
           href={`/api/auth/signin?callbackUrl=${encodeURIComponent(
@@ -126,6 +143,18 @@ export default async function PostPage({
         >
           登入後查看
         </Link>
+        <Link className="underline" href="/">
+          回首頁
+        </Link>
+      </main>
+    );
+  }
+
+  // ADMIN_ONLY / ADMIN_DRAFT：前台一律不給一般人看到（就算登入也不行）
+  if (post.visibility === "ADMIN_ONLY" || post.visibility === "ADMIN_DRAFT") {
+    return (
+      <main className="mx-auto max-w-2xl p-6 space-y-4">
+        <div className="text-neutral-700">找不到貼文</div>
         <Link className="underline" href="/">
           回首頁
         </Link>
@@ -143,6 +172,8 @@ export default async function PostPage({
     // ✅ 兼容：type=IMAGE 或 URL 看起來就是圖片 → 都顯示
     return t === "IMAGE" || looksLikeImageUrl(u);
   });
+
+  const vis = visibilityIcon(String(post.visibility));
 
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-6">
@@ -166,11 +197,16 @@ export default async function PostPage({
       </header>
 
       <article className="rounded border p-4 space-y-4">
-        <div className="text-sm text-neutral-500">
-          {post.author?.name ?? post.author?.email ?? "Unknown"} ·{" "}
-          {new Date(post.createdAt).toLocaleString("zh-TW")}
-          {" · "}
-          {post.visibility}
+        <div className="text-sm text-neutral-500 flex items-center gap-2">
+          <span>
+            {post.author?.name ?? post.author?.email ?? "Unknown"} ·{" "}
+            {new Date(post.createdAt).toLocaleString("zh-TW")}
+          </span>
+
+          {/* ✅ 可見性改成「圖示」(用 title 當提示) */}
+          <span title={vis.title} aria-label={vis.title} className="select-none">
+            {vis.icon}
+          </span>
         </div>
 
         <div className="whitespace-pre-wrap">{post.content}</div>
@@ -180,11 +216,7 @@ export default async function PostPage({
           <div className="grid grid-cols-2 gap-3">
             {images.map((m) => (
               <div key={m.id} className="rounded border overflow-hidden">
-                <img
-                  src={m.url}
-                  alt="post image"
-                  className="w-full h-auto block"
-                />
+                <img src={m.url} alt="post image" className="w-full h-auto block" />
               </div>
             ))}
           </div>
@@ -208,12 +240,7 @@ export default async function PostPage({
         ) : null}
 
         {post.youtubeUrl ? (
-          <a
-            className="text-sm underline"
-            href={post.youtubeUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="text-sm underline" href={post.youtubeUrl} target="_blank" rel="noreferrer">
             YouTube 連結（外開）
           </a>
         ) : null}
