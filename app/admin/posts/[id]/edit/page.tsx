@@ -10,27 +10,20 @@ import EditPostForm from "./EditPostForm";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type ParamsLike = { id?: string } | Promise<{ id?: string }>;
+type Visibility = "PUBLIC" | "LOGIN_ONLY" | "ADMIN_ONLY" | "ADMIN_DRAFT";
 
 export default async function AdminEditPostPage({
   params,
 }: {
-  params: ParamsLike;
+  params: { id?: string } | Promise<{ id?: string }>;
 }) {
-  // ✅ Robust: params might be an object or a Promise (depends on Next.js version/config)
   const resolved = await Promise.resolve(params as any);
   const id = String(resolved?.id ?? "").trim();
-
-  // ✅ If id is missing, never fall back to "first post"
-  if (!id) {
-    redirect("/admin/posts");
-  }
+  if (!id) redirect("/admin/posts");
 
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    redirect(
-      `/api/auth/signin?callbackUrl=${encodeURIComponent(`/admin/posts/${id}/edit`)}`
-    );
+    redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(`/admin/posts/${id}/edit`)}`);
   }
 
   const role = (session.user as any).role;
@@ -43,7 +36,6 @@ export default async function AdminEditPostPage({
     redirect("/");
   }
 
-  // ✅ Use findUnique (id should be unique); avoids "first record" behavior
   const post = await prisma.post.findUnique({
     where: { id },
     select: {
@@ -84,13 +76,12 @@ export default async function AdminEditPostPage({
         </nav>
       </header>
 
-      {/* ✅ key={post.id} ensures client form remounts when navigating between ids */}
       <EditPostForm
         key={post.id}
         postId={post.id}
         initialContent={post.content}
         initialYoutubeUrl={post.youtubeUrl ?? ""}
-        initialVisibility={post.visibility as any}
+        initialVisibility={post.visibility as Visibility}
         initialMedia={post.media}
       />
     </main>

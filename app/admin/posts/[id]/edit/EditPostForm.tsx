@@ -4,7 +4,7 @@
 import { useMemo, useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-type Visibility = "PUBLIC" | "LOGIN_ONLY";
+type Visibility = "PUBLIC" | "LOGIN_ONLY" | "ADMIN_ONLY" | "ADMIN_DRAFT";
 type MediaLite = { id: string; url: string; type: string };
 
 const MAX_FILES = 5;
@@ -18,6 +18,13 @@ function normalizeYoutubeUrl(input: string) {
 
 function isAllowedImage(file: File) {
   return ALLOWED_MIME.has(file.type);
+}
+
+function visibilityLabel(v: Visibility) {
+  if (v === "PUBLIC") return "🌍 公開";
+  if (v === "LOGIN_ONLY") return "👥 會員";
+  if (v === "ADMIN_ONLY") return "🔒 封鎖（僅 Admin）";
+  return "📝 草稿（僅 Admin）";
 }
 
 async function uploadToServer(file: File) {
@@ -48,9 +55,9 @@ export default function EditPostForm(props: {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [content, setContent] = useState(props.initialContent);
-  const [youtubeUrl, setYoutubeUrl] = useState(props.initialYoutubeUrl);
-  const [visibility, setVisibility] = useState<Visibility>(props.initialVisibility);
+  const [content, setContent] = useState(props.initialContent ?? "");
+  const [youtubeUrl, setYoutubeUrl] = useState(props.initialYoutubeUrl ?? "");
+  const [visibility, setVisibility] = useState<Visibility>(props.initialVisibility ?? "ADMIN_DRAFT");
 
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -58,8 +65,6 @@ export default function EditPostForm(props: {
   // media upload UI
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
-
-  const canSubmit = useMemo(() => content.trim().length > 0, [content]);
 
   const existingImages = useMemo(
     () => props.initialMedia.filter((m) => String(m.type || "").toUpperCase() === "IMAGE"),
@@ -78,6 +83,17 @@ export default function EditPostForm(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previews.join("|")]);
 
+  const hasText = useMemo(() => content.trim().length > 0, [content]);
+  const hasAnyImages = useMemo(() => existingImages.length > 0 || files.length > 0, [existingImages.length, files.length]);
+
+  // ✅ 送出規則：
+  // - 草稿：允許全空
+  // - 非草稿：必須「有文字 or 有圖」
+  const canSubmit = useMemo(() => {
+    if (visibility === "ADMIN_DRAFT") return true;
+    return hasText || hasAnyImages;
+  }, [visibility, hasText, hasAnyImages]);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit || isPending) return;
@@ -86,7 +102,8 @@ export default function EditPostForm(props: {
     setSaved(false);
 
     const payload = {
-      content: content.trim(),
+      // ✅ 允許留白，但保留尾端合理結構（不要用 trim() 把整段語意吃掉）
+      content: String(content ?? "").trimEnd(),
       youtubeUrl: normalizeYoutubeUrl(youtubeUrl),
       visibility,
     };
@@ -105,7 +122,9 @@ export default function EditPostForm(props: {
         if (res.status === 401) setError("尚未登入，請重新登入後再試。");
         else if (res.status === 403) setError("權限不足或帳號已被停用。");
         else if (res.status === 404) setError("找不到貼文或已刪除。");
-        else setError(`更新失敗：${code}`);
+        else if (res.status === 400 && code === "EMPTY_CONTENT_AND_NO_MEDIA") {
+          setError("公開/會員/封鎖 必須至少有文字或圖片。若要全空，請維持草稿。");
+        } else setError(`更新失敗：${code}`);
 
         return;
       }
@@ -206,14 +225,12 @@ export default function EditPostForm(props: {
         ) : null}
 
         {saved ? (
-          <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-            已儲存變更。
-          </div>
+          <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">已儲存變更。</div>
         ) : null}
 
         <textarea
           className="w-full rounded border p-3 h-60"
-          placeholder="內容…"
+          placeholder="內容…（允許留空，只要你有圖片；若要全空請維持草稿）"
           value={content}
           onChange={(e) => setContent(e.target.value)}
         />
@@ -230,18 +247,25 @@ export default function EditPostForm(props: {
           <select
             className="rounded border p-2"
             value={visibility}
-            onChange={(e) => setVisibility(e.target.value as Visibility)}
+            onChange={(e) => {
+              const next = e.target.value as Visibility;
+              setVisibility(next);
+              setSaved(false);
+              setError(null);
+            }}
           >
-            <option value="PUBLIC">公開</option>
-            <option value="LOGIN_ONLY">登入可見</option>
+            <option value="PUBLIC">{visibilityLabel("PUBLIC")}</option>
+            <option value="LOGIN_ONLY">{visibilityLabel("LOGIN_ONLY")}</option>
+            <option value="ADMIN_ONLY">{visibilityLabel("ADMIN_ONLY")}</option>
+            <option value="ADMIN_DRAFT">{visibilityLabel("ADMIN_DRAFT")}</option>
           </select>
+
+          <div className="text-xs text-neutral-500">
+            {visibility === "ADMIN_DRAFT" ? "草稿允許全空；其他狀態需至少文字或圖片。" : null}
+          </div>
         </div>
 
-        <button
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-          type="submit"
-          disabled={isPending || !canSubmit}
-        >
+        <button className="rounded bg-black px-4 py-2 text-white disabled:opacity-50" type="submit" disabled={isPending || !canSubmit}>
           {isPending ? "儲存中..." : "儲存變更"}
         </button>
       </form>
