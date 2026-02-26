@@ -218,7 +218,7 @@ export default async function HomePage() {
                     <img
                       src={firstImageUrl}
                       alt="post cover"
-                      className="block h-auto w-auto max-w-full rounded border"
+                      className="block max-w-full h-auto rounded border"
                     />
                   </div>
                 ) : null}
