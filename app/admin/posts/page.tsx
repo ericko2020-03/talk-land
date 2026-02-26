@@ -7,6 +7,9 @@ import { prisma } from "@/lib/prisma";
 import { assertAdmin, assertActive } from "@/lib/rbac";
 import DeletePostButton from "./DeletePostButton";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type PostsQuery = Parameters<typeof prisma.post.findMany>[0];
 type PostAdminItem = Awaited<ReturnType<typeof prisma.post.findMany>>[number];
 

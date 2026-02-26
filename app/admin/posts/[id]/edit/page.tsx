@@ -75,7 +75,9 @@ export default async function AdminEditPostPage({
         </nav>
       </header>
 
+      {/* ✅ 關鍵：key={post.id}，讓切換不同 id 時 EditPostForm 重新 mount */}
       <EditPostForm
+        key={post.id}
         postId={post.id}
         initialContent={post.content}
         initialYoutubeUrl={post.youtubeUrl ?? ""}
