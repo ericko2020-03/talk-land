@@ -46,10 +46,10 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
               {/* 用 button + router.push，避免被任何 overlay/link 影響 */}
               <button
                 type="button"
-                className="underline"
+                className="underline cursor-pointer hover:opacity-80"
                 title={editHref}
                 onClick={() => router.push(editHref)}
-              >
+                >
                 編輯
               </button>
 
