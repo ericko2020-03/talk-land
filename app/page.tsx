@@ -11,8 +11,13 @@ export const revalidate = 0;
 type PostsQuery = Parameters<typeof prisma.post.findMany>[0];
 type PostFeedItem = Awaited<ReturnType<typeof prisma.post.findMany>>[number];
 
-function visibilityIcon(v: "PUBLIC" | "LOGIN_ONLY") {
-  return v === "PUBLIC" ? "🌍" : "👥";
+function visibilityIcon(v: string) {
+  const vv = String(v || "").toUpperCase();
+  if (vv === "PUBLIC") return { icon: "🌍", title: "公開" };
+  if (vv === "LOGIN_ONLY") return { icon: "👥", title: "會員" };
+  if (vv === "ADMIN_ONLY") return { icon: "🔒", title: "封鎖（僅 Admin）" };
+  if (vv === "ADMIN_DRAFT") return { icon: "📝", title: "草稿（僅 Admin）" };
+  return { icon: "❓", title: vv || "UNKNOWN" };
 }
 
 function getYouTubeVideoId(url: string): string | null {
@@ -57,10 +62,18 @@ function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
   if (!youtubeUrl) return null;
   const id = getYouTubeVideoId(youtubeUrl);
   if (!id) return null;
-  // nocookie + modestbranding 讓嵌入較乾淨
-  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
-    id
-  )}?rel=0&modestbranding=1`;
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0&modestbranding=1`;
+}
+
+function looksLikeImageUrl(url: string) {
+  const u = String(url || "").toLowerCase();
+  return (
+    u.endsWith(".jpg") ||
+    u.endsWith(".jpeg") ||
+    u.endsWith(".png") ||
+    u.endsWith(".webp") ||
+    u.endsWith(".gif")
+  );
 }
 
 export default async function HomePage() {
@@ -72,11 +85,19 @@ export default async function HomePage() {
   const query: PostsQuery = {
     where: {
       deletedAt: null,
+      // ✅ 首頁只顯示 PUBLIC / LOGIN_ONLY（你原本規則）
+      // ADMIN_ONLY / ADMIN_DRAFT 不在首頁出現（應在後台管理）
       visibility: signedIn ? { in: ["PUBLIC", "LOGIN_ONLY"] } : "PUBLIC",
     },
     orderBy: { createdAt: "desc" },
     include: {
       author: true,
+      // ✅ 列表需要能判斷是否有圖：取第一張就好（避免拉太多）
+      media: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: { id: true, url: true, type: true },
+        take: 1,
+      },
       _count: { select: { comments: true, likes: true, media: true } },
       ...(signedIn
         ? {
@@ -104,7 +125,10 @@ export default async function HomePage() {
               登出
             </Link>
           ) : (
-            <Link className="underline" href={`/api/auth/signin?callbackUrl=${encodeURIComponent("/")}`}>
+            <Link
+              className="underline"
+              href={`/api/auth/signin?callbackUrl=${encodeURIComponent("/")}`}
+            >
               登入
             </Link>
           )}
@@ -125,7 +149,25 @@ export default async function HomePage() {
         ) : (
           posts.map((p) => {
             const likedByMe = signedIn ? (p as any).likes?.length > 0 : false;
+
             const embedUrl = getYouTubeEmbedUrl(p.youtubeUrl);
+
+            // ✅ 規則 3：
+            // - 有 youtube → 列表只顯示 youtube 畫面（即使有圖也不展示）
+            // - 沒 youtube 且有圖 → 展示第一張圖
+            const mediaFirst: any = Array.isArray((p as any).media) ? (p as any).media[0] : null;
+            const firstImageUrl =
+              !embedUrl && mediaFirst
+                ? (() => {
+                    const t = String(mediaFirst?.type ?? "").toUpperCase();
+                    const u = String(mediaFirst?.url ?? "").trim();
+                    if (!u) return null;
+                    if (t === "IMAGE" || looksLikeImageUrl(u)) return u;
+                    return null;
+                  })()
+                : null;
+
+            const vis = visibilityIcon(String((p as any).visibility));
 
             return (
               <article key={p.id} className="rounded border p-4 space-y-3">
@@ -136,8 +178,8 @@ export default async function HomePage() {
                 >
                   {p.author?.name ?? p.author?.email ?? "Unknown"} ·{" "}
                   {new Date(p.createdAt).toLocaleString("zh-TW")} ·{" "}
-                  <span title={p.visibility}>
-                    {visibilityIcon(p.visibility as any)}
+                  <span title={vis.title} aria-label={vis.title} className="select-none">
+                    {vis.icon}
                   </span>
                 </Link>
 
@@ -154,13 +196,10 @@ export default async function HomePage() {
                   {p.content}
                 </div>
 
-                {/* YouTube embed (if present) */}
+                {/* ✅ 列表媒體規則 */}
                 {embedUrl ? (
                   <div className="rounded border overflow-hidden">
-                    <div
-                      className="relative w-full"
-                      style={{ paddingTop: "56.25%" }}
-                    >
+                    <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
                       <iframe
                         className="absolute inset-0 h-full w-full"
                         src={embedUrl}
@@ -171,6 +210,16 @@ export default async function HomePage() {
                         allowFullScreen
                       />
                     </div>
+                  </div>
+                ) : firstImageUrl ? (
+                  // ✅ 圖片規則（列表同單篇）：
+                  // 水平置中；原圖較小保持原尺寸；太寬則縮到容器寬（max-w-full + w-auto）
+                  <div className="flex justify-center">
+                    <img
+                      src={firstImageUrl}
+                      alt="post cover"
+                      className="block h-auto w-auto max-w-full rounded border"
+                    />
                   </div>
                 ) : null}
 
@@ -184,7 +233,7 @@ export default async function HomePage() {
                   </Link>
                 </div>
 
-                {/* Icon row: avoid always-on underline to remove the stray line */}
+                {/* Icon row */}
                 <div className="flex items-center gap-4 text-sm">
                   <Link
                     href={`/post/${p.id}`}
@@ -200,10 +249,7 @@ export default async function HomePage() {
                     initialCount={p._count.likes}
                   />
 
-                  <span
-                    className="inline-flex items-center gap-1"
-                    title="附件 / 媒體數量"
-                  >
+                  <span className="inline-flex items-center gap-1" title="附件 / 媒體數量">
                     📎 <span className="text-neutral-600">{p._count.media}</span>
                   </span>
 
