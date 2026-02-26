@@ -1,9 +1,10 @@
+// path: app/api/upload/route.ts
 import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import crypto from "crypto";
 import { r2 } from "@/lib/r2";
 
-export const runtime = "nodejs"; // 重要：AWS SDK 在 Node runtime 最穩
+export const runtime = "nodejs"; // AWS SDK on Node runtime
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB
@@ -16,13 +17,22 @@ export async function POST(req: Request) {
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
+
     if (!ALLOWED.has(file.type)) {
-      return NextResponse.json({ error: "Unsupported file type" }, { status: 415 });
-    }
-    if (file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "File too large (max 5MB)" }, { status: 413 });
+      return NextResponse.json(
+        { error: `Unsupported file type: ${file.type}` },
+        { status: 415 }
+      );
     }
 
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json(
+        { error: "File too large (max 5MB)" },
+        { status: 413 }
+      );
+    }
+
+    // Ensure extension matches ContentType consistently.
     const ext = mimeToExt(file.type);
     const key = `uploads/${yyyyMMdd()}/${crypto.randomUUID()}${ext}`;
 
@@ -35,13 +45,12 @@ export async function POST(req: Request) {
         Key: key,
         Body: body,
         ContentType: file.type,
-        // 這是 HTTP cache header（選配）
+        // HTTP cache header (optional)
         CacheControl: "public, max-age=31536000, immutable",
       })
     );
 
     const publicUrl = `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
-
     return NextResponse.json({ key, publicUrl });
   } catch (err: any) {
     return NextResponse.json(
@@ -54,7 +63,7 @@ export async function POST(req: Request) {
 function mimeToExt(mime: string) {
   switch (mime) {
     case "image/jpeg":
-      return ".jpg";
+      return ".jpeg"; // keep extension consistent with MIME type
     case "image/png":
       return ".png";
     case "image/webp":
@@ -62,9 +71,11 @@ function mimeToExt(mime: string) {
     case "image/gif":
       return ".gif";
     default:
-      return "";
+      // Shouldn't happen due to ALLOWED check, but keep it safe.
+      throw new Error(`Unsupported MIME type: ${mime}`);
   }
 }
+
 function yyyyMMdd() {
   const d = new Date();
   const y = d.getFullYear();
