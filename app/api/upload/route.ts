@@ -2,9 +2,9 @@
 import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import crypto from "crypto";
-import { r2 } from "@/lib/r2";
+import { getR2Client, getR2Bucket, getR2PublicBaseUrl } from "@/lib/r2";
 
-export const runtime = "nodejs"; // AWS SDK on Node runtime
+export const runtime = "nodejs";
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB
@@ -32,25 +32,27 @@ export async function POST(req: Request) {
       );
     }
 
-    // Ensure extension matches ContentType consistently.
+    const client = getR2Client();
+    const bucket = getR2Bucket();
+    const publicBase = getR2PublicBaseUrl();
+
     const ext = mimeToExt(file.type);
     const key = `uploads/${yyyyMMdd()}/${crypto.randomUUID()}${ext}`;
 
     const arrayBuffer = await file.arrayBuffer();
     const body = Buffer.from(arrayBuffer);
 
-    await r2.send(
+    await client.send(
       new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET!,
+        Bucket: bucket,
         Key: key,
         Body: body,
         ContentType: file.type,
-        // HTTP cache header (optional)
         CacheControl: "public, max-age=31536000, immutable",
       })
     );
 
-    const publicUrl = `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
+    const publicUrl = `${publicBase}/${key}`;
     return NextResponse.json({ key, publicUrl });
   } catch (err: any) {
     return NextResponse.json(
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
 function mimeToExt(mime: string) {
   switch (mime) {
     case "image/jpeg":
-      return ".jpeg"; // keep extension consistent with MIME type
+      return ".jpeg";
     case "image/png":
       return ".png";
     case "image/webp":
@@ -71,7 +73,6 @@ function mimeToExt(mime: string) {
     case "image/gif":
       return ".gif";
     default:
-      // Shouldn't happen due to ALLOWED check, but keep it safe.
       throw new Error(`Unsupported MIME type: ${mime}`);
   }
 }

@@ -1,24 +1,31 @@
 // path: lib/r2.ts
 import { S3Client } from "@aws-sdk/client-s3";
 
-function must(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
-}
-
-export const R2_BUCKET = must("R2_BUCKET");
-export const R2_PUBLIC_BASE_URL = must("R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
-
 export function getR2Client() {
-  const accountId = must("R2_ACCOUNT_ID");
-  const accessKeyId = must("R2_ACCESS_KEY_ID");
-  const secretAccessKey = must("R2_SECRET_ACCESS_KEY");
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    // 不要在 module load 時就 throw，只有真的呼叫才檢查
+    throw new Error("R2_ENV_NOT_SET");
+  }
 
   return new S3Client({
     region: "auto",
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
-    forcePathStyle: true, // R2 建議打開
   });
+}
+
+export function getR2Bucket() {
+  const bucket = process.env.R2_BUCKET;
+  if (!bucket) throw new Error("R2_BUCKET_NOT_SET");
+  return bucket;
+}
+
+export function getR2PublicBaseUrl() {
+  const base = process.env.R2_PUBLIC_BASE_URL;
+  if (!base) throw new Error("R2_PUBLIC_BASE_URL_NOT_SET");
+  return base.replace(/\/$/, "");
 }
