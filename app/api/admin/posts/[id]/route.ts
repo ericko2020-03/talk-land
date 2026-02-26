@@ -38,9 +38,9 @@ async function requireAdmin() {
 
 export async function PATCH(
   req: NextRequest,
-  ctx: { params: { id: string } }
+  ctx: { params: Promise<{ id: string }> }
 ) {
-  const { id } = ctx.params;
+  const { id } = await ctx.params;
 
   const guard = await requireAdmin();
   if (!guard.ok) return guard.res;
@@ -57,7 +57,7 @@ export async function PATCH(
     return NextResponse.json({ error: "BAD_VISIBILITY" }, { status: 400 });
   }
 
-  // Guard soft-deleted / missing post => prevent Prisma throw
+  // Guard: prevent Prisma update throw (missing / soft-deleted)
   const exists = await prisma.post.findFirst({
     where: { id, deletedAt: null },
     select: { id: true },
@@ -82,14 +82,14 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  ctx: { params: { id: string } }
+  ctx: { params: Promise<{ id: string }> }
 ) {
-  const { id } = ctx.params;
+  const { id } = await ctx.params;
 
   const guard = await requireAdmin();
   if (!guard.ok) return guard.res;
 
-  // Guard soft-deleted / missing post => avoid Prisma throw
+  // Guard: prevent Prisma update throw (missing / soft-deleted)
   const exists = await prisma.post.findFirst({
     where: { id, deletedAt: null },
     select: { id: true },
