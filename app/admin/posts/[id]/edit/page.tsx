@@ -10,19 +10,26 @@ import EditPostForm from "./EditPostForm";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+type ParamsLike = { id?: string } | Promise<{ id?: string }>;
+
 export default async function AdminEditPostPage({
   params,
 }: {
-  params: { id: string };
+  params: ParamsLike;
 }) {
-  const { id } = params;
+  // ✅ Robust: params might be an object or a Promise (depends on Next.js version/config)
+  const resolved = await Promise.resolve(params as any);
+  const id = String(resolved?.id ?? "").trim();
+
+  // ✅ If id is missing, never fall back to "first post"
+  if (!id) {
+    redirect("/admin/posts");
+  }
 
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     redirect(
-      `/api/auth/signin?callbackUrl=${encodeURIComponent(
-        `/admin/posts/${id}/edit`
-      )}`
+      `/api/auth/signin?callbackUrl=${encodeURIComponent(`/admin/posts/${id}/edit`)}`
     );
   }
 
@@ -36,13 +43,15 @@ export default async function AdminEditPostPage({
     redirect("/");
   }
 
-  const post = await prisma.post.findFirst({
-    where: { id, deletedAt: null },
+  // ✅ Use findUnique (id should be unique); avoids "first record" behavior
+  const post = await prisma.post.findUnique({
+    where: { id },
     select: {
       id: true,
       content: true,
       youtubeUrl: true,
       visibility: true,
+      deletedAt: true,
       media: {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: { id: true, url: true, type: true },
@@ -50,7 +59,7 @@ export default async function AdminEditPostPage({
     },
   });
 
-  if (!post) {
+  if (!post || post.deletedAt) {
     return (
       <main className="mx-auto max-w-2xl p-6 space-y-4">
         <div>找不到貼文或已刪除</div>
@@ -75,7 +84,7 @@ export default async function AdminEditPostPage({
         </nav>
       </header>
 
-      {/* ✅ 關鍵：key={post.id}，讓切換不同 id 時 EditPostForm 重新 mount */}
+      {/* ✅ key={post.id} ensures client form remounts when navigating between ids */}
       <EditPostForm
         key={post.id}
         postId={post.id}
