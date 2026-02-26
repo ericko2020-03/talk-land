@@ -12,6 +12,9 @@ export const revalidate = 0;
 type PostWithRelations = Awaited<ReturnType<typeof prisma.post.findFirst>>;
 type CommentItem = NonNullable<PostWithRelations>["comments"][number];
 
+// ✅ 用最小型別避免 Prisma inference 在某些環境變成 any/unknown
+type MediaItem = { id: string; url: string; type?: string | null };
+
 function getYouTubeVideoId(url: string): string | null {
   try {
     const u = new URL(url);
@@ -129,10 +132,15 @@ export default async function PostPage({ params }: { params: { id: string } }) {
   const likedByMe = signedIn ? (post.likes?.length ?? 0) > 0 : false;
   const embedUrl = getYouTubeEmbedUrl(post.youtubeUrl);
 
+  // ✅ 明確告訴 TS：這裡的 media 至少有 id/url/type
+  const mediaList: MediaItem[] = Array.isArray((post as any).media)
+    ? ((post as any).media as MediaItem[])
+    : [];
+
   // ✅ 兼容：type=IMAGE 或 URL 看起來就是圖片 → 都顯示
-  const images = (post.media ?? []).filter((m) => {
-    const t = String((m as any)?.type ?? "").toUpperCase();
-    const u = String((m as any)?.url ?? "").trim();
+  const images: MediaItem[] = mediaList.filter((m: MediaItem) => {
+    const t = String(m.type ?? "").toUpperCase();
+    const u = String(m.url ?? "").trim();
     if (!u) return false;
     if (t === "IMAGE") return true;
     return isLikelyImageUrl(u);
@@ -172,7 +180,7 @@ export default async function PostPage({ params }: { params: { id: string } }) {
         {/* ✅ 圖片附件區塊 */}
         {images.length > 0 ? (
           <div className="grid grid-cols-2 gap-3">
-            {images.map((m: any) => (
+            {images.map((m: MediaItem) => (
               <div key={m.id} className="rounded border overflow-hidden">
                 <img
                   src={m.url}
