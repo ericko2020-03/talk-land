@@ -1,7 +1,7 @@
 // path: app/admin/posts/[id]/edit/EditPostForm.tsx
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 type Visibility = "PUBLIC" | "LOGIN_ONLY";
@@ -9,13 +9,33 @@ type MediaLite = { id: string; url: string; type: string };
 
 const MAX_FILES = 5;
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 function normalizeYoutubeUrl(input: string) {
   const s = (input ?? "").trim();
   return s.length > 0 ? s : null;
 }
-function isImage(file: File) {
-  return file.type.startsWith("image/");
+
+function isAllowedImage(file: File) {
+  return ALLOWED_MIME.has(file.type);
+}
+
+async function uploadToServer(file: File) {
+  const fd = new FormData();
+  fd.append("file", file); // IMPORTANT: must match API route.ts form.get("file")
+
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    body: fd,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.detail || data?.error || `Upload failed: HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  return data as { key: string; publicUrl: string };
 }
 
 export default function EditPostForm(props: {
@@ -48,9 +68,15 @@ export default function EditPostForm(props: {
 
   const remainingSlots = Math.max(0, MAX_FILES - existingImages.length);
 
-  const previews = useMemo(() => {
-    return files.map((f) => URL.createObjectURL(f));
-  }, [files]);
+  const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+
+  // cleanup preview object URLs (avoid memory leak)
+  useEffect(() => {
+    return () => {
+      previews.forEach((u) => URL.revokeObjectURL(u));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previews.join("|")]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -98,9 +124,9 @@ export default function EditPostForm(props: {
 
     const picked = Array.from(inputFiles);
 
-    const badType = picked.find((f) => !isImage(f));
+    const badType = picked.find((f) => !isAllowedImage(f));
     if (badType) {
-      alert("只允許上傳圖片檔（image/*）");
+      alert("只允許上傳圖片檔（jpeg/png/webp/gif）");
       return;
     }
 
@@ -137,42 +163,8 @@ export default function EditPostForm(props: {
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
 
-        // 1) presign
-        const presignRes = await fetch("/api/uploads/r2/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            postId: props.postId,
-            filename: f.name,
-            contentType: f.type,
-            size: f.size,
-          }),
-        });
-
-        const presignData = await presignRes.json().catch(() => ({}));
-        if (!presignRes.ok) {
-          setError(`取得上傳授權失敗：${presignData?.error ?? presignRes.status}`);
-          return;
-        }
-
-        const uploadUrl = String(presignData?.uploadUrl ?? "");
-        const publicUrl = String(presignData?.publicUrl ?? "");
-        if (!uploadUrl || !publicUrl) {
-          setError("上傳授權回傳格式錯誤");
-          return;
-        }
-
-        // 2) PUT to R2
-        const putRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": f.type },
-          body: f,
-        });
-
-        if (!putRes.ok) {
-          setError(`上傳到 R2 失敗：HTTP ${putRes.status}`);
-          return;
-        }
+        // 1) upload to server (server -> R2)
+        const { publicUrl } = await uploadToServer(f);
 
         uploaded.push({
           url: publicUrl,
@@ -181,7 +173,7 @@ export default function EditPostForm(props: {
         });
       }
 
-      // 3) attach to post (DB)
+      // 2) attach to post (DB)
       const attachRes = await fetch(`/api/admin/posts/${props.postId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -199,8 +191,8 @@ export default function EditPostForm(props: {
         router.refresh();
       });
       setSaved(true);
-    } catch {
-      setError("上傳過程發生錯誤，請稍後再試。");
+    } catch (e: any) {
+      setError(`上傳過程發生錯誤：${String(e?.message ?? e)}`);
     } finally {
       setUploading(false);
     }
@@ -210,9 +202,7 @@ export default function EditPostForm(props: {
     <div className="space-y-8">
       <form onSubmit={onSubmit} className="space-y-3">
         {error ? (
-          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
         ) : null}
 
         {saved ? (
