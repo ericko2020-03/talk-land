@@ -9,8 +9,8 @@ import LikeButton from "@/app/components/LikeButton";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type PostDetail = Awaited<ReturnType<typeof prisma.post.findFirst>>;
-type CommentItem = NonNullable<PostDetail>["comments"][number];
+type PostWithRelations = Awaited<ReturnType<typeof prisma.post.findFirst>>;
+type CommentItem = NonNullable<PostWithRelations>["comments"][number];
 
 function getYouTubeVideoId(url: string): string | null {
   try {
@@ -23,9 +23,7 @@ function getYouTubeVideoId(url: string): string | null {
     }
 
     if (host === "youtube.com" || host.endsWith(".youtube.com")) {
-      if (u.pathname === "/watch") {
-        return u.searchParams.get("v");
-      }
+      if (u.pathname === "/watch") return u.searchParams.get("v");
 
       if (u.pathname.startsWith("/shorts/")) {
         const id = u.pathname.split("/").filter(Boolean)[1];
@@ -54,21 +52,31 @@ function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
   )}?rel=0&modestbranding=1`;
 }
 
-export default async function PostPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+function isLikelyImageUrl(url: string) {
+  const s = (url ?? "").toLowerCase().split("?")[0].split("#")[0];
+  return (
+    s.endsWith(".jpg") ||
+    s.endsWith(".jpeg") ||
+    s.endsWith(".png") ||
+    s.endsWith(".webp") ||
+    s.endsWith(".gif")
+  );
+}
+
+export default async function PostPage({ params }: { params: { id: string } }) {
+  const { id } = params;
 
   const session = await getServerSession(authOptions);
   const signedIn = !!session?.user;
   const userId = signedIn ? String((session!.user as any).id) : null;
 
-  const post: any = await prisma.post.findFirst({
+  const post = await prisma.post.findFirst({
     where: { id, deletedAt: null },
     include: {
       author: true,
+      media: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      },
       comments: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
@@ -121,6 +129,15 @@ export default async function PostPage({
   const likedByMe = signedIn ? (post.likes?.length ?? 0) > 0 : false;
   const embedUrl = getYouTubeEmbedUrl(post.youtubeUrl);
 
+  // ✅ 兼容：type=IMAGE 或 URL 看起來就是圖片 → 都顯示
+  const images = (post.media ?? []).filter((m) => {
+    const t = String((m as any)?.type ?? "").toUpperCase();
+    const u = String((m as any)?.url ?? "").trim();
+    if (!u) return false;
+    if (t === "IMAGE") return true;
+    return isLikelyImageUrl(u);
+  });
+
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-6">
       <header className="flex items-center justify-between">
@@ -128,7 +145,6 @@ export default async function PostPage({
           ← 回首頁
         </Link>
 
-        {/* ✅ 這裡改成「同一套 LikeButton」，確保詳頁跟首頁一致 */}
         <div className="flex items-center gap-3 text-sm text-neutral-600">
           <span>💬 {post._count.comments}</span>
 
@@ -143,7 +159,7 @@ export default async function PostPage({
         </div>
       </header>
 
-      <article className="rounded border p-4 space-y-3">
+      <article className="rounded border p-4 space-y-4">
         <div className="text-sm text-neutral-500">
           {post.author?.name ?? post.author?.email ?? "Unknown"} ·{" "}
           {new Date(post.createdAt).toLocaleString("zh-TW")}
@@ -153,6 +169,23 @@ export default async function PostPage({
 
         <div className="whitespace-pre-wrap">{post.content}</div>
 
+        {/* ✅ 圖片附件區塊 */}
+        {images.length > 0 ? (
+          <div className="grid grid-cols-2 gap-3">
+            {images.map((m: any) => (
+              <div key={m.id} className="rounded border overflow-hidden">
+                <img
+                  src={m.url}
+                  alt="post image"
+                  className="w-full h-auto block"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {/* YouTube embed */}
         {embedUrl ? (
           <div className="rounded border overflow-hidden">
             <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
