@@ -7,6 +7,9 @@ import { prisma } from "@/lib/prisma";
 import { assertAdmin, assertActive } from "@/lib/rbac";
 import EditPostForm from "./EditPostForm";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AdminEditPostPage({
   params,
 }: {
@@ -35,7 +38,16 @@ export default async function AdminEditPostPage({
 
   const post = await prisma.post.findFirst({
     where: { id, deletedAt: null },
-    select: { id: true, content: true, youtubeUrl: true, visibility: true },
+    select: {
+      id: true,
+      content: true,
+      youtubeUrl: true,
+      visibility: true,
+      media: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: { id: true, url: true, type: true },
+      },
+    },
   });
 
   if (!post) {
@@ -67,7 +79,8 @@ export default async function AdminEditPostPage({
         postId={post.id}
         initialContent={post.content}
         initialYoutubeUrl={post.youtubeUrl ?? ""}
-        initialVisibility={post.visibility}
+        initialVisibility={post.visibility as any}
+        initialMedia={post.media}
       />
     </main>
   );
