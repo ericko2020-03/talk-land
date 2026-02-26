@@ -5,7 +5,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assertAdmin, assertActive } from "@/lib/rbac";
-import DeletePostButton from "./DeletePostButton";
 import AdminPostsListClient from "./AdminPostsListClient";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +36,18 @@ export default async function AdminPostsPage() {
   }
 
   const query: PostsQuery = {
-    where: { deletedAt: null },
+    where: {
+      deletedAt: null,
+
+      // ✅ 隱藏「空白草稿」：
+      // visibility=ADMIN_DRAFT 且 content="" 且 youtube=null 且 media=0
+      NOT: {
+        visibility: "ADMIN_DRAFT",
+        content: "",
+        youtubeUrl: null,
+        media: { none: {} },
+      },
+    },
     orderBy: { createdAt: "desc" },
     include: {
       author: true,
@@ -49,7 +59,7 @@ export default async function AdminPostsPage() {
   const posts: PostAdminItem[] = await prisma.post.findMany(query);
 
   return (
-    <main className="mx-auto max-w-3xl p-6 space-y-6">
+    <main className="mx-auto max-w-2xl p-6 space-y-6 bg-white text-neutral-900 min-h-screen">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">後台｜文章管理</h1>
         <nav className="flex items-center gap-4 text-sm">
