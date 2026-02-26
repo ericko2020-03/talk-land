@@ -10,13 +10,17 @@ import EditPostForm from "./EditPostForm";
 export default async function AdminEditPostPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id } = await params;
+  const { id } = params;
 
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    redirect(`/api/auth/signin?callbackUrl=/admin/posts/${id}/edit`);
+    redirect(
+      `/api/auth/signin?callbackUrl=${encodeURIComponent(
+        `/admin/posts/${id}/edit`
+      )}`
+    );
   }
 
   const role = (session.user as any).role;

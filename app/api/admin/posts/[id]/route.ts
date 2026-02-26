@@ -11,7 +11,10 @@ type Visibility = "PUBLIC" | "LOGIN_ONLY";
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    return { ok: false as const, res: NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 }) };
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 }),
+    };
   }
 
   const role = (session.user as any).role;
@@ -30,11 +33,14 @@ async function requireAdmin() {
     };
   }
 
-  return { ok: true as const, session };
+  return { ok: true as const };
 }
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params;
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: { id: string } }
+) {
+  const { id } = ctx.params;
 
   const guard = await requireAdmin();
   if (!guard.ok) return guard.res;
@@ -51,13 +57,19 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: "BAD_VISIBILITY" }, { status: 400 });
   }
 
+  // Guard soft-deleted / missing post => prevent Prisma throw
+  const exists = await prisma.post.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!exists) {
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  }
+
   const post = await prisma.post.update({
     where: { id },
-    data: {
-      content,
-      youtubeUrl,
-      visibility,
-    },
+    data: { content, youtubeUrl, visibility },
+    select: { id: true, content: true, youtubeUrl: true, visibility: true },
   });
 
   revalidatePath("/");
@@ -65,14 +77,26 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   revalidatePath("/admin/posts");
   revalidatePath(`/admin/posts/${id}/edit`);
 
-  return NextResponse.json(post);
+  return NextResponse.json({ ok: true, post });
 }
 
-export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params;
+export async function DELETE(
+  _req: NextRequest,
+  ctx: { params: { id: string } }
+) {
+  const { id } = ctx.params;
 
   const guard = await requireAdmin();
   if (!guard.ok) return guard.res;
+
+  // Guard soft-deleted / missing post => avoid Prisma throw
+  const exists = await prisma.post.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!exists) {
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  }
 
   const post = await prisma.post.update({
     where: { id },

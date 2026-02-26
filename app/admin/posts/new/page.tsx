@@ -3,16 +3,25 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { assertAdmin, assertActive } from "@/lib/rbac";
 import PostForm from "./PostForm";
 
 export default async function NewPostPage() {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    redirect("/api/auth/signin?callbackUrl=/admin/posts/new");
+    redirect(
+      `/api/auth/signin?callbackUrl=${encodeURIComponent("/admin/posts/new")}`
+    );
   }
 
-  if ((session.user as any).role !== "ADMIN") {
+  const role = (session.user as any).role;
+  const status = (session.user as any).status;
+
+  try {
+    assertActive(status);
+    assertAdmin(role);
+  } catch {
     redirect("/");
   }
 
