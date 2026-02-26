@@ -12,8 +12,11 @@ export const revalidate = 0;
 type PostWithRelations = Awaited<ReturnType<typeof prisma.post.findFirst>>;
 type CommentItem = NonNullable<PostWithRelations>["comments"][number];
 
-// ✅ 用最小型別避免 Prisma inference 在某些環境變成 any/unknown
-type MediaItem = { id: string; url: string; type?: string | null };
+type MediaItem = {
+  id: string;
+  url: string;
+  type?: string | null;
+};
 
 function getYouTubeVideoId(url: string): string | null {
   try {
@@ -26,7 +29,9 @@ function getYouTubeVideoId(url: string): string | null {
     }
 
     if (host === "youtube.com" || host.endsWith(".youtube.com")) {
-      if (u.pathname === "/watch") return u.searchParams.get("v");
+      if (u.pathname === "/watch") {
+        return u.searchParams.get("v");
+      }
 
       if (u.pathname.startsWith("/shorts/")) {
         const id = u.pathname.split("/").filter(Boolean)[1];
@@ -55,19 +60,18 @@ function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
   )}?rel=0&modestbranding=1`;
 }
 
-function isLikelyImageUrl(url: string) {
-  const s = (url ?? "").toLowerCase().split("?")[0].split("#")[0];
-  return (
-    s.endsWith(".jpg") ||
-    s.endsWith(".jpeg") ||
-    s.endsWith(".png") ||
-    s.endsWith(".webp") ||
-    s.endsWith(".gif")
-  );
+function looksLikeImageUrl(url: string) {
+  const u = url.toLowerCase();
+  return u.endsWith(".jpg") || u.endsWith(".jpeg") || u.endsWith(".png") || u.endsWith(".webp") || u.endsWith(".gif");
 }
 
-export default async function PostPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default async function PostPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  // ✅ Next 16：params 可能是 Promise，要 await
+  const { id } = await params;
 
   const session = await getServerSession(authOptions);
   const signedIn = !!session?.user;
@@ -132,18 +136,12 @@ export default async function PostPage({ params }: { params: { id: string } }) {
   const likedByMe = signedIn ? (post.likes?.length ?? 0) > 0 : false;
   const embedUrl = getYouTubeEmbedUrl(post.youtubeUrl);
 
-  // ✅ 明確告訴 TS：這裡的 media 至少有 id/url/type
-  const mediaList: MediaItem[] = Array.isArray((post as any).media)
-    ? ((post as any).media as MediaItem[])
-    : [];
-
-  // ✅ 兼容：type=IMAGE 或 URL 看起來就是圖片 → 都顯示
-  const images: MediaItem[] = mediaList.filter((m: MediaItem) => {
-    const t = String(m.type ?? "").toUpperCase();
-    const u = String(m.url ?? "").trim();
+  const images: MediaItem[] = (post.media ?? []).filter((m: any) => {
+    const t = String(m?.type ?? "").toUpperCase();
+    const u = String(m?.url ?? "").trim();
     if (!u) return false;
-    if (t === "IMAGE") return true;
-    return isLikelyImageUrl(u);
+    // ✅ 兼容：type=IMAGE 或 URL 看起來就是圖片 → 都顯示
+    return t === "IMAGE" || looksLikeImageUrl(u);
   });
 
   return (
@@ -180,13 +178,12 @@ export default async function PostPage({ params }: { params: { id: string } }) {
         {/* ✅ 圖片附件區塊 */}
         {images.length > 0 ? (
           <div className="grid grid-cols-2 gap-3">
-            {images.map((m: MediaItem) => (
+            {images.map((m) => (
               <div key={m.id} className="rounded border overflow-hidden">
                 <img
                   src={m.url}
                   alt="post image"
                   className="w-full h-auto block"
-                  loading="lazy"
                 />
               </div>
             ))}
