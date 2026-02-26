@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assertAdmin, assertActive } from "@/lib/rbac";
 import DeletePostButton from "./DeletePostButton";
+import AdminPostsListClient from "./AdminPostsListClient";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -65,32 +66,18 @@ export default async function AdminPostsPage() {
         {posts.length === 0 ? (
           <div className="text-neutral-500">目前沒有貼文。</div>
         ) : (
-          posts.map((p) => (
-            <article key={p.id} className="rounded border p-4 space-y-2">
-              <div className="text-sm text-neutral-500">
-                {p.author?.name ?? p.author?.email ?? "Unknown"} ·{" "}
-                {new Date(p.createdAt).toLocaleString("zh-TW")}
-                {" · "}
-                <span className="uppercase">{p.visibility}</span>
-                {" · "}💬 {p._count.comments}
-                {" · "}❤️ {p._count.likes}
-                {" · "}🖼️ {p._count.media}
-              </div>
-
-              <div className="text-neutral-900">{previewText(p.content, 140)}</div>
-
-              <div className="flex items-center gap-4 text-sm">
-                <Link className="underline" href={`/post/${p.id}`}>
-                  前台查看
-                </Link>
-                <Link className="underline" href={`/admin/posts/${p.id}/edit`}>
-                  編輯
-                </Link>
-
-                <DeletePostButton postId={p.id} />
-              </div>
-            </article>
-          ))
+          <AdminPostsListClient
+            posts={posts.map((p) => ({
+              id: p.id,
+              createdAt: p.createdAt.toISOString(),
+              visibility: String(p.visibility),
+              authorLabel: p.author?.name ?? p.author?.email ?? "Unknown",
+              preview: previewText(p.content, 140),
+              countComments: p._count.comments,
+              countLikes: p._count.likes,
+              countMedia: p._count.media,
+            }))}
+          />
         )}
       </section>
     </main>
