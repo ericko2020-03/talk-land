@@ -10,9 +10,15 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_PREFIX = "image/";
 
-function requireAdminSession = async () => {
+async function requireAdminSession() {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return { ok: false as const, res: NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 }) };
+
+  if (!session?.user) {
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 }),
+    };
+  }
 
   const role = (session.user as any).role;
   const status = (session.user as any).status;
@@ -23,12 +29,15 @@ function requireAdminSession = async () => {
   } catch (e: any) {
     return {
       ok: false as const,
-      res: NextResponse.json({ error: e?.message ?? "FORBIDDEN" }, { status: e?.statusCode ?? 403 }),
+      res: NextResponse.json(
+        { error: e?.message ?? "FORBIDDEN" },
+        { status: e?.statusCode ?? 403 }
+      ),
     };
   }
 
   return { ok: true as const, session };
-};
+}
 
 function extFromContentType(ct: string) {
   const s = String(ct || "").toLowerCase();
@@ -40,7 +49,6 @@ function extFromContentType(ct: string) {
 }
 
 function safeSlugFilename(name: string) {
-  // 保留副檔名用途不大，這裡只做 key 安全化
   return String(name || "file")
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
@@ -72,9 +80,11 @@ export async function POST(req: NextRequest) {
 
   if (!postId) return NextResponse.json({ error: "MISSING_POST_ID" }, { status: 400 });
   if (!filename) return NextResponse.json({ error: "MISSING_FILENAME" }, { status: 400 });
+
   if (!contentType || !contentType.startsWith(ALLOWED_PREFIX)) {
     return NextResponse.json({ error: "ONLY_IMAGE_ALLOWED" }, { status: 400 });
   }
+
   if (!Number.isFinite(size) || size <= 0 || size > MAX_SIZE) {
     return NextResponse.json({ error: "FILE_TOO_LARGE" }, { status: 400 });
   }
@@ -85,7 +95,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "R2_ENV_NOT_SET" }, { status: 500 });
   }
 
-  // key 規則：posts/<postId>/<timestamp>-<safeName>.<ext>
   const ext = extFromContentType(contentType);
   const safeName = safeSlugFilename(filename);
   const key = `posts/${postId}/${Date.now()}-${safeName}.${ext}`;
@@ -95,11 +104,10 @@ export async function POST(req: NextRequest) {
     Bucket: bucket,
     Key: key,
     ContentType: contentType,
-    // 可加 CacheControl
     CacheControl: "public, max-age=31536000, immutable",
   });
 
-  const uploadUrl = await getSignedUrl(client, cmd, { expiresIn: 60 }); // 60 秒
+  const uploadUrl = await getSignedUrl(client, cmd, { expiresIn: 60 });
   const publicUrl = `${publicBase.replace(/\/$/, "")}/${key}`;
 
   return NextResponse.json({ ok: true, uploadUrl, publicUrl, key });
