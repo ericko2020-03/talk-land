@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { assertActive, assertAdmin } from "@/lib/rbac";
+import { prisma } from "@/lib/prisma";
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -80,6 +81,15 @@ export async function POST(req: NextRequest) {
 
   if (!postId) return NextResponse.json({ error: "MISSING_POST_ID" }, { status: 400 });
   if (!filename) return NextResponse.json({ error: "MISSING_FILENAME" }, { status: 400 });
+
+  // ✅ 先確認 post 存在（避免 ghost upload）
+  const post = await prisma.post.findFirst({
+    where: { id: postId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!post) {
+    return NextResponse.json({ error: "POST_NOT_FOUND" }, { status: 404 });
+  }
 
   if (!contentType || !contentType.startsWith(ALLOWED_PREFIX)) {
     return NextResponse.json({ error: "ONLY_IMAGE_ALLOWED" }, { status: 400 });

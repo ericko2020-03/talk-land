@@ -19,46 +19,35 @@ type PostRow = {
 function visibilityBadge(vRaw: string) {
   const v = String(vRaw ?? "").toUpperCase();
 
-  // DB enum: PUBLIC / LOGIN_ONLY / ADMIN_ONLY / ADMIN_DRAFT
-  // UI label: 公開 / 會員 / 封鎖 / 草稿
+  // DB: LOGIN_ONLY，但 UI: 會員
   if (v === "PUBLIC") return { label: "公開", icon: "🌍" };
   if (v === "LOGIN_ONLY") return { label: "會員", icon: "👥" };
   if (v === "ADMIN_ONLY") return { label: "封鎖", icon: "🔒" };
   if (v === "ADMIN_DRAFT") return { label: "草稿", icon: "📝" };
 
-  return { label: "未知", icon: "❓" };
+  return { label: v || "UNKNOWN", icon: "❓" };
 }
 
 export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
   const router = useRouter();
 
   return (
-    <div className="space-y-3">
-      {/* ✅ 用來確認手機是否真的吃到這個檔案 */}
-      <div className="text-xs text-neutral-500 select-none">🧪MOBILE-CHECK</div>
-
+    <>
       {posts.map((p) => {
+        const adminViewHref = `/admin/posts/${p.id}`; // ✅ 新增：後台查看（可看草稿/封鎖）
         const editHref = `/admin/posts/${p.id}/edit`;
         const viewHref = `/post/${p.id}`;
         const vb = visibilityBadge(p.visibility);
 
         return (
-          <article
-            key={p.id}
-            className="rounded border p-4 space-y-2 bg-white text-neutral-900"
-          >
+          <article key={p.id} className="rounded border p-4 space-y-2 bg-white text-neutral-900">
             <div className="text-sm text-neutral-600 flex flex-wrap items-center gap-2">
               <span>
                 {p.authorLabel} · {new Date(p.createdAt).toLocaleString("zh-TW")}
               </span>
 
-              <span
-                className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs bg-neutral-50 text-neutral-800"
-                title={vb.label}
-                aria-label={vb.label}
-              >
-                <span className="select-none">{vb.icon}</span>
-                <span>{vb.label}</span>
+              <span className="rounded border px-2 py-0.5 text-xs bg-neutral-50 text-neutral-700" title={vb.label}>
+                {vb.icon} {vb.label}
               </span>
 
               <span>💬 {p.countComments}</span>
@@ -67,14 +56,16 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
             </div>
 
             <div className="text-neutral-900">
-              {p.preview ? (
-                p.preview
-              ) : (
-                <span className="text-neutral-400">（無內容）</span>
-              )}
+              {p.preview ? p.preview : <span className="text-neutral-400">（無內容）</span>}
             </div>
 
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              {/* ✅ 新增：後台查看（Admin 任何狀態都可看） */}
+              <Link className="underline" href={adminViewHref} title={adminViewHref}>
+                後台查看
+              </Link>
+
+              {/* ✅ 保留：前台查看（一般使用者視角；草稿/封鎖會顯示找不到，這是預期） */}
               <Link className="underline" href={viewHref} title={viewHref}>
                 前台查看
               </Link>
@@ -93,6 +84,6 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
           </article>
         );
       })}
-    </div>
+    </>
   );
 }

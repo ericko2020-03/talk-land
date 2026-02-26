@@ -2,9 +2,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-type Visibility = "PUBLIC" | "LOGIN_ONLY";
+type Visibility = "PUBLIC" | "LOGIN_ONLY" | "ADMIN_ONLY" | "ADMIN_DRAFT";
 
 type PresignResponse = {
   uploadUrl: string;
@@ -13,16 +13,15 @@ type PresignResponse = {
 
 const MAX_FILES = 5;
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const DRAFT_KEY = "allensay_admin_draft_post_id";
 
 function normalizeYoutubeUrl(input: string) {
   const s = (input ?? "").trim();
   return s.length > 0 ? s : null;
 }
-
 function isImage(file: File) {
   return file.type.startsWith("image/");
 }
-
 function safeJsonParse(text: string) {
   try {
     return text ? JSON.parse(text) : {};
@@ -31,17 +30,23 @@ function safeJsonParse(text: string) {
   }
 }
 
+function visibilityLabel(v: Visibility) {
+  if (v === "PUBLIC") return "🌍 公開";
+  if (v === "LOGIN_ONLY") return "👥 會員";
+  if (v === "ADMIN_ONLY") return "🔒 封鎖（僅 Admin）";
+  return "📝 草稿（僅 Admin）";
+}
+
 export default function PostForm() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const [content, setContent] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
+  const [visibility, setVisibility] = useState<Visibility>("ADMIN_DRAFT");
 
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ 新增貼文成功後保存 postId，才能上傳圖片（presign 需要 postId）
   const [createdPostId, setCreatedPostId] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
 
@@ -49,14 +54,19 @@ export default function PostForm() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  const canSubmit = useMemo(() => content.trim().length > 0, [content]);
+  // 已 attach 的數量（用來判斷「只有圖片也可發布」）
+  const [attachedCount, setAttachedCount] = useState(0);
 
-  // ✅ previews with revoke to avoid memory leak
+  const draftCreatingRef = useRef(false);
+  const draftIdRef = useRef<string | null>(null);
+
+  const hasText = useMemo(() => content.trim().length > 0, [content]);
+  const hasPickedFiles = files.length > 0;
+  const hasAnyImages = attachedCount > 0 || hasPickedFiles;
+
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => {
-    return () => {
-      for (const url of previews) URL.revokeObjectURL(url);
-    };
+    return () => previews.forEach((u) => URL.revokeObjectURL(u));
   }, [previews]);
 
   function onPickFiles(inputFiles: FileList | null) {
@@ -76,7 +86,6 @@ export default function PostForm() {
       return;
     }
 
-    // ✅ 允許追加，但總數仍不得超過 MAX_FILES
     const combined = [...files, ...picked];
     if (combined.length > MAX_FILES) {
       alert(`每篇最多上傳 ${MAX_FILES} 張（你目前已選 ${files.length} 張，本次又選 ${picked.length} 張）`);
@@ -86,21 +95,167 @@ export default function PostForm() {
     setFiles(combined);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!canSubmit || isPending) return;
+  // ✅ 進頁：同 session 只允許 1 個空草稿
+  useEffect(() => {
+    let mounted = true;
+
+    async function ensureDraft() {
+      if (draftCreatingRef.current) return;
+      if (createdPostId) return;
+
+      draftCreatingRef.current = true;
+      setError(null);
+
+      try {
+        const cached = typeof window !== "undefined" ? window.sessionStorage.getItem(DRAFT_KEY) : null;
+        if (cached && cached.trim()) {
+          // 直接採用 cached draft id（server 端也會保底：attach 時會查 post 是否存在）
+          const id = cached.trim();
+          if (!mounted) return;
+
+          draftIdRef.current = id;
+          setCreatedPostId(id);
+          setCreated(true);
+          draftCreatingRef.current = false;
+          return;
+        }
+
+        const res = await fetch("/api/admin/posts/draft", { method: "POST" });
+        const text = await res.text();
+        const data = safeJsonParse(text) ?? {};
+
+        if (!res.ok) {
+          console.error("[draft] failed", res.status, text);
+          setError(`建立草稿失敗：HTTP ${res.status} / ${(data as any)?.error ?? text ?? "unknown"}`);
+          return;
+        }
+
+        const id = String((data as any)?.id ?? "").trim();
+        if (!id) {
+          setError("建立草稿成功但未取得 id（API 回傳格式錯誤）");
+          return;
+        }
+
+        if (!mounted) return;
+
+        draftIdRef.current = id;
+        setCreatedPostId(id);
+        setCreated(true);
+        window.sessionStorage.setItem(DRAFT_KEY, id);
+
+        startTransition(() => router.refresh());
+      } catch (err) {
+        console.error("[draft] threw", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(`建立草稿時網路錯誤：${msg}`);
+      } finally {
+        draftCreatingRef.current = false;
+      }
+    }
+
+    ensureDraft();
+
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ 只要草稿已經「不是空白狀態」，就把 session draft key 清掉，避免下次誤用
+  useEffect(() => {
+    if (!createdPostId) return;
+
+    const isEmptyDraft =
+      visibility === "ADMIN_DRAFT" &&
+      content.trim().length === 0 &&
+      attachedCount === 0 &&
+      files.length === 0 &&
+      !normalizeYoutubeUrl(youtubeUrl);
+
+    if (!isEmptyDraft) {
+      try {
+        window.sessionStorage.removeItem(DRAFT_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, [createdPostId, visibility, content, attachedCount, files.length, youtubeUrl]);
+
+  // ✅ 離頁：若仍是空白草稿 → 刪除（best-effort）
+  useEffect(() => {
+    function shouldDeleteEmptyDraft() {
+      const id = draftIdRef.current;
+      if (!id) return false;
+
+      const isEmptyDraft =
+        visibility === "ADMIN_DRAFT" &&
+        content.trim().length === 0 &&
+        attachedCount === 0 &&
+        files.length === 0 &&
+        !normalizeYoutubeUrl(youtubeUrl);
+
+      return isEmptyDraft;
+    }
+
+    async function deleteDraftKeepAlive() {
+      const id = draftIdRef.current;
+      if (!id) return;
+      try {
+        await fetch(`/api/admin/posts/${id}/draft`, { method: "DELETE", keepalive: true });
+      } catch {
+        // ignore
+      } finally {
+        try {
+          window.sessionStorage.removeItem(DRAFT_KEY);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    function onPageHide() {
+      if (!shouldDeleteEmptyDraft()) return;
+      void deleteDraftKeepAlive();
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState !== "hidden") return;
+      if (!shouldDeleteEmptyDraft()) return;
+      void deleteDraftKeepAlive();
+    }
+
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [visibility, content, attachedCount, files.length, youtubeUrl]);
+
+  // ✅ 儲存/發布
+  async function saveOrPublish() {
+    if (!createdPostId || isPending) return;
 
     setError(null);
 
+    // 非草稿：必須「有文字 or 有圖」
+    if (visibility !== "ADMIN_DRAFT") {
+      if (!hasText && !hasAnyImages) {
+        setError("請至少輸入文字或上傳圖片後再發佈（允許只有圖片、文字空白）。");
+        return;
+      }
+    }
+
     const payload = {
-      content: content.trim(),
+      content,
       youtubeUrl: normalizeYoutubeUrl(youtubeUrl),
       visibility,
     };
 
     try {
-      const res = await fetch("/api/admin/posts", {
-        method: "POST",
+      const res = await fetch(`/api/admin/posts/${createdPostId}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -109,44 +264,23 @@ export default function PostForm() {
       const data = safeJsonParse(text) ?? {};
 
       if (!res.ok) {
-        const code = (data as any)?.error ?? res.status;
-
-        if (res.status === 401) setError("尚未登入，請重新登入後再試。");
-        else if (res.status === 403) setError("權限不足或帳號已被停用。");
-        else setError(`發文失敗：${code}`);
-
-        console.error("[create post] failed", res.status, text);
+        console.error("[save/publish] failed", res.status, text);
+        setError(`儲存失敗：HTTP ${res.status} / ${(data as any)?.error ?? text ?? "unknown"}`);
         return;
       }
 
-      // ✅ 需要後端回傳 { id: post.id }，才能開始上傳圖片
-      const newId = String((data as any)?.id ?? "").trim();
-      if (!newId) {
-        setError(
-          "發文成功，但 API 沒有回傳貼文 id（需要 id 才能上傳圖片）。請調整 /api/admin/posts 回傳格式。"
-        );
-        console.error("[create post] ok but missing id", text);
-        return;
-      }
-
-      setCreatedPostId(newId);
-      setCreated(true);
-
-      // ✅ 不跳頁：留在此頁讓你繼續上傳圖片
-      startTransition(() => {
-        router.refresh();
-      });
+      startTransition(() => router.refresh());
     } catch (err) {
-      console.error("[create post] threw", err);
+      console.error("[save/publish] threw", err);
       const msg = err instanceof Error ? err.message : String(err);
-      setError(`網路或伺服器連線失敗：${msg}`);
+      setError(`儲存時網路錯誤：${msg}`);
     }
   }
 
   async function uploadImages() {
     if (uploading) return;
     if (!createdPostId) {
-      alert("請先發佈貼文，建立後才能上傳圖片。");
+      alert("草稿尚未建立完成，請稍後再試。");
       return;
     }
     if (files.length === 0) return;
@@ -155,49 +289,35 @@ export default function PostForm() {
     setUploading(true);
 
     try {
-      console.log("[uploadImages] postId =", createdPostId, "files =", files.length);
-
       const uploaded: { url: string; type: string; sortOrder: number }[] = [];
 
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
 
         // 1) presign
-        let presignRes: Response;
-        try {
-          presignRes = await fetch("/api/uploads/r2/presign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              postId: createdPostId,
-              filename: f.name,
-              contentType: f.type,
-              size: f.size,
-            }),
-          });
-        } catch (err) {
-          console.error("[presign] fetch threw:", err);
-          const msg = err instanceof Error ? err.message : String(err);
-          setError(`(presign) 網路錯誤：${msg}`);
-          return;
-        }
+        const presignRes = await fetch("/api/uploads/r2/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            postId: createdPostId,
+            filename: f.name,
+            contentType: f.type,
+            size: f.size,
+          }),
+        });
 
         const presignText = await presignRes.text();
-        const presignJson = safeJsonParse(presignText);
-        const presignData: any = presignJson ?? {};
+        const presignData: any = safeJsonParse(presignText) ?? {};
 
         if (!presignRes.ok) {
-          console.error("[presign] failed:", presignRes.status, presignText);
-          setError(
-            `(presign) 失敗：HTTP ${presignRes.status} / ${presignData?.error ?? presignText ?? "unknown"}`
-          );
+          console.error("[presign] failed", presignRes.status, presignText);
+          setError(`(presign) 失敗：HTTP ${presignRes.status} / ${presignData?.error ?? presignText ?? "unknown"}`);
           return;
         }
 
         const uploadUrl = String(presignData?.uploadUrl ?? "");
         const publicUrl = String(presignData?.publicUrl ?? "");
         if (!uploadUrl || !publicUrl) {
-          console.error("[presign] bad payload:", presignData);
           setError("(presign) 回傳缺 uploadUrl/publicUrl");
           return;
         }
@@ -207,7 +327,6 @@ export default function PostForm() {
         try {
           putRes = await fetch(uploadUrl, {
             method: "PUT",
-            // ⚠️ 若你之後發現是簽名不匹配，可先把這行拿掉測試：
             headers: { "Content-Type": f.type },
             body: f,
           });
@@ -219,7 +338,6 @@ export default function PostForm() {
         }
 
         if (!putRes.ok) {
-          console.error("[PUT] failed:", putRes.status);
           setError(`(PUT) 上傳到 R2 失敗：HTTP ${putRes.status}`);
           return;
         }
@@ -227,11 +345,11 @@ export default function PostForm() {
         uploaded.push({
           url: publicUrl,
           type: "IMAGE",
-          sortOrder: i, // 新貼文從 0 開始
+          sortOrder: attachedCount + i,
         });
       }
 
-      // 3) attach to post (DB)
+      // 3) attach
       const attachRes = await fetch(`/api/admin/posts/${createdPostId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -239,8 +357,7 @@ export default function PostForm() {
       });
 
       const attachText = await attachRes.text();
-      const attachJson = safeJsonParse(attachText);
-      const attachData: any = attachJson ?? {};
+      const attachData: any = safeJsonParse(attachText) ?? {};
 
       if (!attachRes.ok) {
         console.error("[attach] failed:", attachRes.status, attachText);
@@ -248,10 +365,10 @@ export default function PostForm() {
         return;
       }
 
+      setAttachedCount((n) => n + uploaded.length);
       setFiles([]);
-      startTransition(() => {
-        router.refresh();
-      });
+
+      startTransition(() => router.refresh());
     } catch (err) {
       console.error("[uploadImages] unexpected:", err);
       const msg = err instanceof Error ? err.message : String(err);
@@ -263,51 +380,18 @@ export default function PostForm() {
 
   return (
     <div className="space-y-8">
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="space-y-3">
         {error ? (
           <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
         ) : null}
 
         {created ? (
           <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-            已建立貼文（可繼續上傳圖片）。
+            草稿已建立（同一 session 只會有一個空白草稿）。
           </div>
-        ) : null}
-
-        <textarea
-          className="w-full rounded border p-3 h-48"
-          placeholder="寫點什麼…"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-        />
-
-        <input
-          className="w-full rounded border p-2"
-          placeholder="YouTube 連結（可留空）"
-          value={youtubeUrl}
-          onChange={(e) => setYoutubeUrl(e.target.value)}
-        />
-
-        <div className="flex items-center gap-3">
-          <label className="text-sm text-neutral-600">可見性</label>
-          <select
-            className="rounded border p-2"
-            value={visibility}
-            onChange={(e) => setVisibility(e.target.value as Visibility)}
-          >
-            <option value="PUBLIC">公開</option>
-            <option value="LOGIN_ONLY">登入可見</option>
-          </select>
-        </div>
-
-        <button
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-          type="submit"
-          disabled={isPending || !canSubmit || created}
-          title={created ? "已建立貼文" : undefined}
-        >
-          {isPending ? "發佈中..." : created ? "已發佈" : "發佈"}
-        </button>
+        ) : (
+          <div className="rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-600">建立草稿中…</div>
+        )}
 
         {createdPostId ? (
           <div className="text-sm text-neutral-600">
@@ -321,20 +405,53 @@ export default function PostForm() {
             </a>
           </div>
         ) : null}
-      </form>
+      </div>
 
-      {/* ✅ 新增貼文：圖片上傳 */}
+      {/* 內容編輯 */}
+      <section className="space-y-3">
+        <textarea
+          className="w-full rounded border p-3 h-48"
+          placeholder="寫點什麼…（允許留空，只要你有上傳圖片）"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+
+        <input
+          className="w-full rounded border p-2"
+          placeholder="YouTube 連結（可留空）"
+          value={youtubeUrl}
+          onChange={(e) => setYoutubeUrl(e.target.value)}
+        />
+
+        <div className="flex items-center gap-3">
+          <label className="text-sm text-neutral-600">可見性</label>
+          <select className="rounded border p-2" value={visibility} onChange={(e) => setVisibility(e.target.value as Visibility)}>
+            <option value="PUBLIC">{visibilityLabel("PUBLIC")}</option>
+            <option value="LOGIN_ONLY">{visibilityLabel("LOGIN_ONLY")}</option>
+            <option value="ADMIN_ONLY">{visibilityLabel("ADMIN_ONLY")}</option>
+            <option value="ADMIN_DRAFT">{visibilityLabel("ADMIN_DRAFT")}</option>
+          </select>
+
+          <div className="text-xs text-neutral-500">{visibility === "ADMIN_DRAFT" ? "全空時只能維持草稿" : null}</div>
+        </div>
+
+        <button
+          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+          type="button"
+          disabled={!createdPostId || isPending}
+          onClick={saveOrPublish}
+          title={!createdPostId ? "草稿建立中" : undefined}
+        >
+          {isPending ? "儲存中..." : visibility === "ADMIN_DRAFT" ? "儲存草稿" : "發佈 / 更新"}
+        </button>
+      </section>
+
+      {/* 圖片上傳 */}
       <section className="space-y-3">
         <div>
           <div className="font-semibold">圖片附件</div>
-          <div className="text-sm text-neutral-600">
-            每篇最多 {MAX_FILES} 張，單張 ≤ 5MB
-          </div>
-          {!createdPostId ? (
-            <div className="text-sm text-amber-700">
-              請先按「發佈」建立貼文，建立後才可上傳圖片（因為上傳授權需要 postId）。
-            </div>
-          ) : null}
+          <div className="text-sm text-neutral-600">每篇最多 {MAX_FILES} 張，單張 ≤ 5MB</div>
+          <div className="text-sm text-neutral-600">已附加：{attachedCount} 張</div>
         </div>
 
         <div className="space-y-2">
@@ -386,10 +503,6 @@ export default function PostForm() {
                 >
                   清空已選
                 </button>
-              </div>
-
-              <div className="text-xs text-neutral-500">
-                若你看到 (PUT) 被瀏覽器擋下（Failed to fetch），幾乎是 R2 CORS 或 presign 簽名條件不一致造成。
               </div>
             </div>
           ) : null}
