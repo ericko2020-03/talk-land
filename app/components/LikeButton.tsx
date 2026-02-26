@@ -1,10 +1,10 @@
 // path: app/components/LikeButton.tsx
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 function HeartIcon({ filled }: { filled: boolean }) {
-  // 用 SVG 才能精準控制「淺紅 / 紅」與填色
   return (
     <svg
       viewBox="0 0 24 24"
@@ -24,6 +24,9 @@ export default function LikeButton(props: {
   initialLiked: boolean;
   initialCount: number;
 }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
   const [liked, setLiked] = useState(props.initialLiked);
   const [count, setCount] = useState(props.initialCount);
   const [loading, setLoading] = useState(false);
@@ -35,18 +38,43 @@ export default function LikeButton(props: {
     }
     if (loading) return;
 
+    // optimistic
+    const prevLiked = liked;
+    const prevCount = count;
+    const nextLiked = !prevLiked;
+    const nextCount = Math.max(0, prevCount + (nextLiked ? 1 : -1));
+
+    setLiked(nextLiked);
+    setCount(nextCount);
+
     setLoading(true);
     try {
       const res = await fetch(`/api/posts/${props.postId}/like`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        alert(`按讚失敗：${data?.error ?? res.status}`);
+        // rollback
+        setLiked(prevLiked);
+        setCount(prevCount);
+
+        if (res.status === 401) {
+          alert("尚未登入或登入已過期，請重新登入。");
+        } else if (res.status === 403) {
+          alert("目前帳號狀態無法按讚（可能已被停用）。");
+        } else {
+          alert(`按讚失敗：${data?.error ?? res.status}`);
+        }
         return;
       }
 
+      // authoritative state from server
       setLiked(!!data.liked);
-      setCount(Number(data.count ?? count));
+      setCount(Number.isFinite(Number(data.count)) ? Number(data.count) : prevCount);
+
+      // sync server components counts on page
+      startTransition(() => {
+        router.refresh();
+      });
     } finally {
       setLoading(false);
     }
@@ -56,7 +84,7 @@ export default function LikeButton(props: {
     <button
       type="button"
       onClick={toggle}
-      disabled={loading}
+      disabled={loading || isPending}
       className="inline-flex items-center gap-1 disabled:opacity-60"
       title={liked ? "取消按讚" : "按讚"}
     >
