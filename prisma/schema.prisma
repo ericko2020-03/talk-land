@@ -1,13 +1,12 @@
+// path: prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
-
 
 datasource db {
   provider = "postgresql"
   // Prisma 7 + prisma.config.ts：url 在 config 裡設定，schema 不要寫 url
 }
-
 
 enum UserRole {
   USER
@@ -22,6 +21,8 @@ enum UserStatus {
 enum PostVisibility {
   PUBLIC
   LOGIN_ONLY
+  ADMIN_ONLY
+  ADMIN_DRAFT
 }
 
 model User {
@@ -51,6 +52,10 @@ model Post {
   youtubeUrl String?
   visibility PostVisibility @default(PUBLIC)
 
+  // ✅ Draft TTL + publish marker
+  draftExpiresAt DateTime?
+  publishedAt    DateTime?
+
   media      PostMedia[]
   comments   Comment[]
   likes      PostLike[]
@@ -62,6 +67,7 @@ model Post {
   @@index([createdAt])
   @@index([visibility])
   @@index([deletedAt])
+  @@index([draftExpiresAt])
 }
 
 model PostMedia {
