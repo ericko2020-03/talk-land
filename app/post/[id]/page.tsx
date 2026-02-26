@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import CommentForm from "./CommentForm";
+import LikeButton from "@/app/components/LikeButton";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -59,9 +60,12 @@ export default async function PostPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await getServerSession(authOptions);
 
-  const post: PostDetail = await prisma.post.findFirst({
+  const session = await getServerSession(authOptions);
+  const signedIn = !!session?.user;
+  const userId = signedIn ? String((session!.user as any).id) : null;
+
+  const post: any = await prisma.post.findFirst({
     where: { id, deletedAt: null },
     include: {
       author: true,
@@ -72,6 +76,15 @@ export default async function PostPage({
         take: 200,
       },
       _count: { select: { likes: true, comments: true, media: true } },
+      ...(signedIn
+        ? {
+            likes: {
+              where: { userId: userId! },
+              select: { userId: true },
+              take: 1,
+            },
+          }
+        : {}),
     },
   });
 
@@ -86,13 +99,15 @@ export default async function PostPage({
     );
   }
 
-  if (post.visibility === "LOGIN_ONLY" && !session?.user) {
+  if (post.visibility === "LOGIN_ONLY" && !signedIn) {
     return (
       <main className="mx-auto max-w-2xl p-6 space-y-4">
         <div className="text-neutral-700">此貼文僅登入可見。</div>
         <Link
           className="underline"
-          href={`/api/auth/signin?callbackUrl=/post/${post.id}`}
+          href={`/api/auth/signin?callbackUrl=${encodeURIComponent(
+            `/post/${post.id}`
+          )}`}
         >
           登入後查看
         </Link>
@@ -103,6 +118,7 @@ export default async function PostPage({
     );
   }
 
+  const likedByMe = signedIn ? (post.likes?.length ?? 0) > 0 : false;
   const embedUrl = getYouTubeEmbedUrl(post.youtubeUrl);
 
   return (
@@ -111,9 +127,19 @@ export default async function PostPage({
         <Link className="underline" href="/">
           ← 回首頁
         </Link>
-        <div className="text-sm text-neutral-500">
-          💬 {post._count.comments} · ❤️ {post._count.likes} · 📎{" "}
-          {post._count.media}
+
+        {/* ✅ 這裡改成「同一套 LikeButton」，確保詳頁跟首頁一致 */}
+        <div className="flex items-center gap-3 text-sm text-neutral-600">
+          <span>💬 {post._count.comments}</span>
+
+          <LikeButton
+            postId={post.id}
+            signedIn={signedIn}
+            initialLiked={likedByMe}
+            initialCount={post._count.likes}
+          />
+
+          <span>📎 {post._count.media}</span>
         </div>
       </header>
 
@@ -129,10 +155,7 @@ export default async function PostPage({
 
         {embedUrl ? (
           <div className="rounded border overflow-hidden">
-            <div
-              className="relative w-full"
-              style={{ paddingTop: "56.25%" }}
-            >
+            <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
               <iframe
                 className="absolute inset-0 h-full w-full"
                 src={embedUrl}
@@ -161,7 +184,7 @@ export default async function PostPage({
       <section className="space-y-3">
         <h2 className="font-semibold">留言</h2>
 
-        <CommentForm postId={post.id} signedIn={!!session?.user} />
+        <CommentForm postId={post.id} signedIn={signedIn} />
 
         <div className="space-y-3">
           {post.comments.length === 0 ? (

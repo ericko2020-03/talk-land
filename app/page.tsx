@@ -104,7 +104,7 @@ export default async function HomePage() {
               登出
             </Link>
           ) : (
-            <Link className="underline" href="/api/auth/signin?callbackUrl=/">
+            <Link className="underline" href={`/api/auth/signin?callbackUrl=${encodeURIComponent("/")}`}>
               登入
             </Link>
           )}
