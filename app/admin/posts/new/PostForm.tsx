@@ -1,15 +1,11 @@
 // path: app/admin/posts/new/PostForm.tsx
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 type Visibility = "PUBLIC" | "LOGIN_ONLY" | "ADMIN_ONLY" | "ADMIN_DRAFT";
-
-type PresignResponse = {
-  uploadUrl: string;
-  publicUrl: string;
-};
 
 const MAX_FILES = 5;
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
@@ -29,7 +25,6 @@ function safeJsonParse(text: string) {
     return null;
   }
 }
-
 function visibilityLabel(v: Visibility) {
   if (v === "PUBLIC") return "🌍 公開";
   if (v === "LOGIN_ONLY") return "👥 會員";
@@ -44,11 +39,9 @@ export default function PostForm() {
   const [content, setContent] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("ADMIN_DRAFT");
-
   const [error, setError] = useState<string | null>(null);
 
   const [createdPostId, setCreatedPostId] = useState<string | null>(null);
-  const [created, setCreated] = useState(false);
 
   // upload UI
   const [files, setFiles] = useState<File[]>([]);
@@ -59,6 +52,9 @@ export default function PostForm() {
 
   const draftCreatingRef = useRef(false);
   const draftIdRef = useRef<string | null>(null);
+
+  // 用來做「是否已儲存」的粗略判斷（只針對 textarea 文字需求）
+  const lastSavedContentRef = useRef<string>("");
 
   const hasText = useMemo(() => content.trim().length > 0, [content]);
   const hasPickedFiles = files.length > 0;
@@ -95,7 +91,7 @@ export default function PostForm() {
     setFiles(combined);
   }
 
-  // ✅ 進頁：同 session 只允許 1 個空草稿
+  // ✅ 進頁：同 session 只允許 1 個空草稿（原則不變）
   useEffect(() => {
     let mounted = true;
 
@@ -107,15 +103,14 @@ export default function PostForm() {
       setError(null);
 
       try {
-        const cached = typeof window !== "undefined" ? window.sessionStorage.getItem(DRAFT_KEY) : null;
+        const cached =
+          typeof window !== "undefined" ? window.sessionStorage.getItem(DRAFT_KEY) : null;
+
         if (cached && cached.trim()) {
-          // 直接採用 cached draft id（server 端也會保底：attach 時會查 post 是否存在）
           const id = cached.trim();
           if (!mounted) return;
-
           draftIdRef.current = id;
           setCreatedPostId(id);
-          setCreated(true);
           draftCreatingRef.current = false;
           return;
         }
@@ -140,7 +135,6 @@ export default function PostForm() {
 
         draftIdRef.current = id;
         setCreatedPostId(id);
-        setCreated(true);
         window.sessionStorage.setItem(DRAFT_KEY, id);
 
         startTransition(() => router.refresh());
@@ -161,7 +155,7 @@ export default function PostForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ 只要草稿已經「不是空白狀態」，就把 session draft key 清掉，避免下次誤用
+  // ✅ 只要草稿已經「不是空白狀態」，就把 session draft key 清掉，避免下次誤用（原則不變）
   useEffect(() => {
     if (!createdPostId) return;
 
@@ -181,7 +175,7 @@ export default function PostForm() {
     }
   }, [createdPostId, visibility, content, attachedCount, files.length, youtubeUrl]);
 
-  // ✅ 離頁：若仍是空白草稿 → 刪除（best-effort）
+  // ✅ 離頁：若仍是空白草稿 → 刪除（best-effort）（原本就有，保留）
   useEffect(() => {
     function shouldDeleteEmptyDraft() {
       const id = draftIdRef.current;
@@ -233,24 +227,23 @@ export default function PostForm() {
     };
   }, [visibility, content, attachedCount, files.length, youtubeUrl]);
 
-  // ✅ 儲存/發布
-  async function saveOrPublish() {
-    if (!createdPostId || isPending) return;
+  async function saveWithVisibility(targetVisibility: Visibility) {
+    if (!createdPostId || isPending) return { ok: false as const };
 
     setError(null);
 
     // 非草稿：必須「有文字 or 有圖」
-    if (visibility !== "ADMIN_DRAFT") {
+    if (targetVisibility !== "ADMIN_DRAFT") {
       if (!hasText && !hasAnyImages) {
         setError("請至少輸入文字或上傳圖片後再發佈（允許只有圖片、文字空白）。");
-        return;
+        return { ok: false as const };
       }
     }
 
     const payload = {
       content,
       youtubeUrl: normalizeYoutubeUrl(youtubeUrl),
-      visibility,
+      visibility: targetVisibility,
     };
 
     try {
@@ -264,17 +257,60 @@ export default function PostForm() {
       const data = safeJsonParse(text) ?? {};
 
       if (!res.ok) {
-        console.error("[save/publish] failed", res.status, text);
+        console.error("[save] failed", res.status, text);
         setError(`儲存失敗：HTTP ${res.status} / ${(data as any)?.error ?? text ?? "unknown"}`);
-        return;
+        return { ok: false as const };
       }
 
+      // 記錄最後一次儲存的內容（用於「離開前自動存草稿」判斷）
+      lastSavedContentRef.current = content;
+
       startTransition(() => router.refresh());
+      return { ok: true as const };
     } catch (err) {
-      console.error("[save/publish] threw", err);
+      console.error("[save] threw", err);
       const msg = err instanceof Error ? err.message : String(err);
       setError(`儲存時網路錯誤：${msg}`);
+      return { ok: false as const };
     }
+  }
+
+  // ✅ 儲存草稿/發布（按鈕在最下方）
+  async function onClickSave() {
+    if (!createdPostId) return;
+
+    const target = visibility;
+    const r = await saveWithVisibility(target);
+
+    // ✅ 發布/更新（非草稿）成功 → 跳後台查看
+    if (r.ok && target !== "ADMIN_DRAFT") {
+      router.push(`/admin/posts/${createdPostId}`);
+    }
+  }
+
+  // ✅ 點回文章列表/首頁時：若 textarea 有文字且「尚未儲存」→ 自動存為草稿後再跳
+  async function maybeAutosaveDraftThenNavigate(href: string) {
+    // 只依你需求：有文字才觸發
+    if (!createdPostId) {
+      router.push(href);
+      return;
+    }
+
+    const now = content.trim();
+    const last = (lastSavedContentRef.current ?? "").trim();
+    const hasUnsavedText = now.length > 0 && now !== last;
+
+    if (!hasUnsavedText) {
+      router.push(href);
+      return;
+    }
+
+    // 強制存成 ADMIN_DRAFT（不管目前 select 選了什麼）
+    const r = await saveWithVisibility("ADMIN_DRAFT");
+    if (r.ok) {
+      router.push(href);
+    }
+    // 若失敗：留在頁面並顯示 error（setError 已做）
   }
 
   async function uploadImages() {
@@ -378,37 +414,79 @@ export default function PostForm() {
     }
   }
 
-  return (
-    <div className="space-y-8">
-      <div className="space-y-3">
-        {error ? (
-          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        ) : null}
+  // =========================
+  // UI style helpers
+  // =========================
+  const topLink = "underline text-white hover:text-white/80";
+  const card = "rounded border bg-white text-neutral-900 p-4";
+  const metaText = "text-sm text-neutral-600";
+  const primaryBtn =
+    "rounded bg-neutral-800 px-4 py-2 text-white hover:bg-neutral-700 disabled:opacity-50";
+  const secondaryBtn =
+    "rounded border px-4 py-2 text-sm hover:bg-neutral-50 disabled:opacity-50";
 
-        {created ? (
-          <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-            草稿已建立（同一 session 只會有一個空白草稿）。
+  return (
+    <div className="space-y-6">
+      {/* ✅ Header（需要攔截跳轉 → 自動存草稿） */}
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">新增貼文</h1>
+        <nav className="flex items-center gap-4 text-sm">
+          <button
+            type="button"
+            className={topLink}
+            onClick={() => void maybeAutosaveDraftThenNavigate("/admin/posts")}
+          >
+            回文章列表
+          </button>
+          <button
+            type="button"
+            className={topLink}
+            onClick={() => void maybeAutosaveDraftThenNavigate("/")}
+          >
+            回首頁
+          </button>
+        </nav>
+      </header>
+
+      {/* ✅ 錯誤提示（保留） */}
+      {error ? (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {/* ✅ 只保留貼文 ID（不再顯示「草稿已建立」banner） */}
+      <div className={card}>
+        {createdPostId ? (
+          <div className="space-y-2">
+            <div className={metaText}>
+              貼文 ID：<span className="font-mono">{createdPostId}</span>
+            </div>
+
+            {/* ✅ 第二列靠右：後台查看 → 前台查看 → 回文章列表 */}
+            <div className="flex justify-end gap-4 text-sm">
+              <a className="underline" href={`/admin/posts/${createdPostId}`} target="_blank" rel="noreferrer">
+                後台查看
+              </a>
+              <a className="underline" href={`/post/${createdPostId}`} target="_blank" rel="noreferrer">
+                前台查看
+              </a>
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void maybeAutosaveDraftThenNavigate("/admin/posts")}
+              >
+                回文章列表
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-600">建立草稿中…</div>
+          <div className="text-sm text-neutral-600">建立草稿中…</div>
         )}
-
-        {createdPostId ? (
-          <div className="text-sm text-neutral-600">
-            貼文 ID：<span className="font-mono">{createdPostId}</span>{" "}
-            <a className="underline" href={`/post/${createdPostId}`} target="_blank" rel="noreferrer">
-              前台查看
-            </a>{" "}
-            ·{" "}
-            <a className="underline" href="/admin/posts">
-              回文章列表
-            </a>
-          </div>
-        ) : null}
       </div>
 
-      {/* 內容編輯 */}
-      <section className="space-y-3">
+      {/* ✅ 內容編輯（白卡） */}
+      <section className={card + " space-y-3"}>
         <textarea
           className="w-full rounded border p-3 h-48"
           placeholder="寫點什麼…（允許留空，只要你有上傳圖片）"
@@ -425,32 +503,30 @@ export default function PostForm() {
 
         <div className="flex items-center gap-3">
           <label className="text-sm text-neutral-600">可見性</label>
-          <select className="rounded border p-2" value={visibility} onChange={(e) => setVisibility(e.target.value as Visibility)}>
+          <select
+            className="rounded border p-2"
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as Visibility)}
+          >
             <option value="PUBLIC">{visibilityLabel("PUBLIC")}</option>
             <option value="LOGIN_ONLY">{visibilityLabel("LOGIN_ONLY")}</option>
             <option value="ADMIN_ONLY">{visibilityLabel("ADMIN_ONLY")}</option>
             <option value="ADMIN_DRAFT">{visibilityLabel("ADMIN_DRAFT")}</option>
           </select>
 
-          <div className="text-xs text-neutral-500">{visibility === "ADMIN_DRAFT" ? "全空時只能維持草稿" : null}</div>
+          <div className="text-xs text-neutral-500">
+            {visibility === "ADMIN_DRAFT" ? "全空時只能維持草稿" : null}
+          </div>
         </div>
-
-        <button
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-          type="button"
-          disabled={!createdPostId || isPending}
-          onClick={saveOrPublish}
-          title={!createdPostId ? "草稿建立中" : undefined}
-        >
-          {isPending ? "儲存中..." : visibility === "ADMIN_DRAFT" ? "儲存草稿" : "發佈 / 更新"}
-        </button>
       </section>
 
-      {/* 圖片上傳 */}
-      <section className="space-y-3">
+      {/* ✅ 圖片上傳（白卡） */}
+      <section className={card + " space-y-3"}>
         <div>
           <div className="font-semibold">圖片附件</div>
-          <div className="text-sm text-neutral-600">每篇最多 {MAX_FILES} 張，單張 ≤ 5MB</div>
+          <div className="text-sm text-neutral-600">
+            每篇最多 {MAX_FILES} 張，單張 ≤ 5MB
+          </div>
           <div className="text-sm text-neutral-600">已附加：{attachedCount} 張</div>
         </div>
 
@@ -490,7 +566,7 @@ export default function PostForm() {
                   type="button"
                   onClick={uploadImages}
                   disabled={uploading || !createdPostId}
-                  className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+                  className={primaryBtn}
                 >
                   {uploading ? "上傳中..." : "上傳圖片"}
                 </button>
@@ -499,7 +575,7 @@ export default function PostForm() {
                   type="button"
                   onClick={() => setFiles([])}
                   disabled={uploading}
-                  className="rounded border px-4 py-2 text-sm disabled:opacity-50"
+                  className={secondaryBtn}
                 >
                   清空已選
                 </button>
@@ -508,6 +584,19 @@ export default function PostForm() {
           ) : null}
         </div>
       </section>
+
+      {/* ✅ 儲存/發布：移到最下方（依你要求） */}
+      <div className="flex justify-end">
+        <button
+          className={primaryBtn}
+          type="button"
+          disabled={!createdPostId || isPending}
+          onClick={() => void onClickSave()}
+          title={!createdPostId ? "草稿建立中" : undefined}
+        >
+          {isPending ? "儲存中..." : visibility === "ADMIN_DRAFT" ? "儲存草稿" : "發佈 / 更新"}
+        </button>
+      </div>
     </div>
   );
 }
