@@ -106,12 +106,13 @@ export default async function HomePage() {
 
   const posts: PostFeedItem[] = await prisma.post.findMany(query);
 
-  const metaText = "text-neutral-500 dark:text-neutral-300";
-  const metaLink =
-    "hover:underline hover:text-neutral-700 dark:hover:text-neutral-100";
+  // ✅ 卡片內固定白底 → meta 直接用白底灰階（不依賴 dark）
+  const metaText = "text-neutral-600";
+  const metaLink = "hover:underline hover:text-neutral-900";
 
   return (
-    <div className="space-y-6">
+    // ✅ 外圍黑底白字（先只做首頁，不改全站）
+    <div className="space-y-6 bg-black text-white rounded">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Allensay_s 社群</h1>
 
@@ -139,7 +140,7 @@ export default async function HomePage() {
 
       <section className="space-y-4">
         {posts.length === 0 ? (
-          <div className="text-neutral-500">
+          <div className="text-neutral-300">
             目前還沒有{signedIn ? "貼文" : "公開貼文"}。
           </div>
         ) : (
@@ -165,7 +166,8 @@ export default async function HomePage() {
             const vis = visibilityIcon(String((p as any).visibility));
 
             return (
-              <article key={p.id} className="rounded border p-4 space-y-3">
+              // ✅ 卡片固定白底黑字
+              <article key={p.id} className="rounded border bg-white text-neutral-900 p-4 space-y-3">
                 <Link
                   href={`/post/${p.id}`}
                   className={`block text-sm ${metaText} ${metaLink}`}
@@ -217,7 +219,7 @@ export default async function HomePage() {
                   </div>
                 ) : null}
 
-                <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800/60">
+                <div className="pt-3 border-t border-neutral-200/70">
                   <div className={`flex items-center justify-between text-sm ${metaText}`}>
                     <div className="flex items-center gap-4">
                       <Link
@@ -235,10 +237,7 @@ export default async function HomePage() {
                         initialCount={p._count.likes}
                       />
 
-                      <span
-                        className="inline-flex items-center gap-1"
-                        title="附件 / 媒體數量"
-                      >
+                      <span className="inline-flex items-center gap-1" title="附件 / 媒體數量">
                         📎 <span>{p._count.media}</span>
                       </span>
 
