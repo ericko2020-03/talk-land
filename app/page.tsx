@@ -116,6 +116,12 @@ export default async function HomePage() {
 
   const posts: PostFeedItem[] = await prisma.post.findMany(query);
 
+  // ✅ 統一的「後設資訊列」灰階字色（同時支援桌機白底與手機黑底）
+  const metaText =
+    "text-neutral-500 dark:text-neutral-300";
+  const metaLink =
+    "hover:underline hover:text-neutral-700 dark:hover:text-neutral-100";
+
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-6">
       <header className="flex items-center justify-between">
@@ -151,7 +157,6 @@ export default async function HomePage() {
         ) : (
           posts.map((p) => {
             const likedByMe = signedIn ? (p as any).likes?.length > 0 : false;
-
             const embedUrl = getYouTubeEmbedUrl(p.youtubeUrl);
 
             // ✅ 規則 3：
@@ -160,6 +165,7 @@ export default async function HomePage() {
             const mediaFirst: any = Array.isArray((p as any).media)
               ? (p as any).media[0]
               : null;
+
             const firstImageUrl =
               !embedUrl && mediaFirst
                 ? (() => {
@@ -175,18 +181,14 @@ export default async function HomePage() {
 
             return (
               <article key={p.id} className="rounded border p-4 space-y-3">
-                {/* Author + time as primary navigation entry */}
+                {/* Top meta row: author + time + visibility icon */}
                 <Link
                   href={`/post/${p.id}`}
-                  className="block text-sm text-neutral-500 hover:underline"
+                  className={`block text-sm ${metaText} ${metaLink}`}
                 >
                   {p.author?.name ?? p.author?.email ?? "Unknown"} ·{" "}
                   {new Date(p.createdAt).toLocaleString("zh-TW")} ·{" "}
-                  <span
-                    title={vis.title}
-                    aria-label={vis.title}
-                    className="select-none"
-                  >
+                  <span title={vis.title} aria-label={vis.title} className="select-none">
                     {vis.icon}
                   </span>
                 </Link>
@@ -220,8 +222,6 @@ export default async function HomePage() {
                     </div>
                   </div>
                 ) : firstImageUrl ? (
-                  // ✅ 圖片規則（列表同單篇）：
-                  // 水平置中；原圖較小保持原尺寸；太寬則縮到容器寬（max-w-full + w-auto）
                   <div className="flex justify-center">
                     <img
                       src={firstImageUrl}
@@ -231,57 +231,52 @@ export default async function HomePage() {
                   </div>
                 ) : null}
 
-// path: app/page.tsx
-// （前面程式碼全部不變，略）
-// 只展示修改後的 Icon row 區塊位置
+                {/* Bottom meta row: give breathing room + consistent grayscale with top row */}
+                <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800/60">
+                  <div className={`flex items-center justify-between text-sm ${metaText}`}>
+                    {/* Left cluster: icons (move heart away from the far right) */}
+                    <div className="flex items-center gap-4">
+                      <Link
+                        href={`/post/${p.id}`}
+                        className={`inline-flex items-center gap-1 ${metaLink}`}
+                        aria-label="查看留言"
+                      >
+                        💬 <span>{p._count.comments}</span>
+                      </Link>
 
-                {/* Icon row (CTA moved to right) */}
-                <div className="flex items-center justify-between text-sm">
-                  {/* Left cluster: icons */}
-                  <div className="flex items-center gap-4">
+                      <LikeButton
+                        postId={p.id}
+                        signedIn={signedIn}
+                        initialLiked={likedByMe}
+                        initialCount={p._count.likes}
+                      />
+
+                      <span className="inline-flex items-center gap-1" title="附件 / 媒體數量">
+                        📎 <span>{p._count.media}</span>
+                      </span>
+
+                      {p.youtubeUrl ? (
+                        <a
+                          className={`${metaLink}`}
+                          href={p.youtubeUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="YouTube 外開"
+                        >
+                          YouTube
+                        </a>
+                      ) : null}
+                    </div>
+
+                    {/* Right cluster: CTA (no fixed white; adapts to light/dark) */}
                     <Link
                       href={`/post/${p.id}`}
-                      className="inline-flex items-center gap-1 text-neutral-200 hover:text-white/80"
-                      aria-label="查看留言"
+                      className={`inline-flex items-center gap-1 font-medium ${metaLink}`}
+                      aria-label="查看全文與留言"
                     >
-                      💬 <span className="text-neutral-300">{p._count.comments}</span>
+                      查看全文與留言 →
                     </Link>
-
-                    <LikeButton
-                      postId={p.id}
-                      signedIn={signedIn}
-                      initialLiked={likedByMe}
-                      initialCount={p._count.likes}
-                    />
-
-                    <span
-                      className="inline-flex items-center gap-1 text-neutral-200"
-                      title="附件 / 媒體數量"
-                    >
-                      📎 <span className="text-neutral-300">{p._count.media}</span>
-                    </span>
-
-                    {p.youtubeUrl ? (
-                      <a
-                        className="text-neutral-200 hover:text-white/80"
-                        href={p.youtubeUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="YouTube 外開"
-                      >
-                        YouTube
-                      </a>
-                    ) : null}
                   </div>
-
-                  {/* Right cluster: CTA */}
-                  <Link
-                    href={`/post/${p.id}`}
-                    className="inline-flex items-center gap-1 text-white hover:text-white/80 active:text-white/70 font-medium"
-                    aria-label="查看全文與留言"
-                  >
-                    查看全文與留言 →
-                  </Link>
                 </div>
               </article>
             );
