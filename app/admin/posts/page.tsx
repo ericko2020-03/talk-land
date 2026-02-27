@@ -56,7 +56,7 @@ export default async function AdminPostsPage() {
   const posts: PostAdminItem[] = await prisma.post.findMany(query);
 
   return (
-    <div className="space-y-6 bg-white text-neutral-900 min-h-screen">
+    <div className="space-y-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">後台｜文章管理</h1>
         <nav className="flex items-center gap-4 text-sm">
@@ -85,7 +85,9 @@ export default async function AdminPostsPage() {
                 visibility: String((p as any).visibility),
                 authorLabel: p.author?.name ?? p.author?.email ?? "Unknown",
                 content: String(p.content ?? ""),
-                youtubeUrl: (p as any).youtubeUrl ? String((p as any).youtubeUrl) : null,
+                youtubeUrl: (p as any).youtubeUrl
+                  ? String((p as any).youtubeUrl)
+                  : null,
                 mediaFirstUrl: mediaFirst?.url ? String(mediaFirst.url) : null,
                 mediaFirstType: mediaFirst?.type ? String(mediaFirst.type) : null,
                 countComments: p._count.comments,
