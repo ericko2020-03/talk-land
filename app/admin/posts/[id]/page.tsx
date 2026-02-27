@@ -13,7 +13,13 @@ type ParamsLike = { id?: string } | Promise<{ id?: string }>;
 
 function looksLikeImageUrl(url: string) {
   const u = url.toLowerCase();
-  return u.endsWith(".jpg") || u.endsWith(".jpeg") || u.endsWith(".png") || u.endsWith(".webp") || u.endsWith(".gif");
+  return (
+    u.endsWith(".jpg") ||
+    u.endsWith(".jpeg") ||
+    u.endsWith(".png") ||
+    u.endsWith(".webp") ||
+    u.endsWith(".gif")
+  );
 }
 
 function visibilityBadge(vRaw: string) {
@@ -37,8 +43,10 @@ function getYouTubeVideoId(url: string): string | null {
 
     if (host === "youtube.com" || host.endsWith(".youtube.com")) {
       if (u.pathname === "/watch") return u.searchParams.get("v");
-      if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/").filter(Boolean)[1] || null;
-      if (u.pathname.startsWith("/embed/")) return u.pathname.split("/").filter(Boolean)[1] || null;
+      if (u.pathname.startsWith("/shorts/"))
+        return u.pathname.split("/").filter(Boolean)[1] || null;
+      if (u.pathname.startsWith("/embed/"))
+        return u.pathname.split("/").filter(Boolean)[1] || null;
     }
 
     return null;
@@ -51,17 +59,25 @@ function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
   if (!youtubeUrl) return null;
   const id = getYouTubeVideoId(youtubeUrl);
   if (!id) return null;
-  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0&modestbranding=1`;
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+    id
+  )}?rel=0&modestbranding=1`;
 }
 
-export default async function AdminPostPreviewPage({ params }: { params: ParamsLike }) {
+export default async function AdminPostPreviewPage({
+  params,
+}: {
+  params: ParamsLike;
+}) {
   const resolved = await Promise.resolve(params as any);
   const id = String(resolved?.id ?? "").trim();
   if (!id) redirect("/admin/posts");
 
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(`/admin/posts/${id}`)}`);
+    redirect(
+      `/api/auth/signin?callbackUrl=${encodeURIComponent(`/admin/posts/${id}`)}`
+    );
   }
 
   const role = (session.user as any).role;
@@ -89,14 +105,29 @@ export default async function AdminPostPreviewPage({ params }: { params: ParamsL
     },
   });
 
+  // ✅ 後台視覺：卡片外黑底白字 + 內容白卡（不做手機/桌機區分）
+  const pageShell = "space-y-6 bg-black text-white rounded";
+  const topLink = "underline text-white hover:text-white/80";
+  const metaText = "text-neutral-600";
+  const metaLink = "hover:underline hover:text-neutral-900";
+
   if (!post) {
     return (
-      <main className="mx-auto max-w-2xl p-6 space-y-4 bg-white text-neutral-900 min-h-screen">
-        <div>找不到貼文或已刪除</div>
-        <Link className="underline" href="/admin/posts">
-          回文章列表
-        </Link>
-      </main>
+      <div className={pageShell}>
+        <header className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">後台｜查看貼文</h1>
+
+          <nav className="flex items-center gap-4 text-sm">
+            <Link className={topLink} href="/admin/posts">
+              回文章列表
+            </Link>
+          </nav>
+        </header>
+
+        <div className="rounded border bg-white text-neutral-900 p-4">
+          找不到貼文或已刪除
+        </div>
+      </div>
     );
   }
 
@@ -113,67 +144,69 @@ export default async function AdminPostPreviewPage({ params }: { params: ParamsL
   const contentTrimmed = String(post.content ?? "").trim();
 
   return (
-    <main className="mx-auto max-w-2xl p-6 space-y-6 bg-white text-neutral-900 min-h-screen">
+    <div className={pageShell}>
+      {/* ✅ Header：結構比照前台單篇頁，但保留後台功能 */}
       <header className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">後台查看貼文</h1>
-          <div className="text-sm text-neutral-600">
-            ID：<span className="font-mono">{post.id}</span>
+        <div className="space-y-0.5">
+          <h1 className="text-2xl font-bold">後台｜查看貼文</h1>
+          <div className="text-sm text-white/70">
+            ID：<span className="font-mono text-white/90">{post.id}</span>
           </div>
         </div>
 
         <nav className="flex items-center gap-4 text-sm">
-          <Link className="underline" href="/admin/posts">
+          <Link className={topLink} href="/admin/posts">
             回文章列表
           </Link>
-          <Link className="underline" href={`/admin/posts/${post.id}/edit`}>
+          <Link className={topLink} href={`/admin/posts/${post.id}/edit`}>
             編輯
           </Link>
-          <Link className="underline" href={`/post/${post.id}`} title="一般使用者視角">
+          <Link className={topLink} href={`/post/${post.id}`} title="一般使用者視角">
             前台查看
           </Link>
         </nav>
       </header>
 
-      <article className="rounded border p-4 space-y-4">
-        <div className="text-sm text-neutral-500 flex flex-wrap items-center gap-2">
+      {/* ✅ 文章卡片：白底黑字（比照前台） */}
+      <article className="rounded border bg-white text-neutral-900 p-4 space-y-4">
+        {/* top meta row */}
+        <div className={`text-sm ${metaText} flex flex-wrap items-center gap-2`}>
           <span>
-            {post.author?.name ?? post.author?.email ?? "Unknown"} · {new Date(post.createdAt).toLocaleString("zh-TW")}
+            {post.author?.name ?? post.author?.email ?? "Unknown"} ·{" "}
+            {new Date(post.createdAt).toLocaleString("zh-TW")}
           </span>
 
-          <span className="rounded border px-2 py-0.5 text-xs bg-neutral-50" title={vb.label}>
+          <span
+            className="rounded border px-2 py-0.5 text-xs bg-neutral-50 text-neutral-700"
+            title={vb.label}
+          >
             {vb.icon} {vb.label}
           </span>
-
-          <span>💬 {post._count.comments}</span>
-          <span>❤️ {post._count.likes}</span>
-          <span>🖼️ {post._count.media}</span>
         </div>
 
-        {/* 內容（允許空白：顯示 placeholder） */}
+        {/* content */}
         {contentTrimmed.length > 0 ? (
           <div className="whitespace-pre-wrap">{post.content}</div>
         ) : (
           <div className="text-sm text-neutral-500">(無文字內容)</div>
         )}
 
-        {/* 圖片：一律水平置中，垂直排列；手機寬度內縮放 */}
+        {/* images */}
         {images.length > 0 ? (
-          <div className="space-y-3">
+          <div className="flex flex-col items-center gap-4">
             {images.map((m: any) => (
-              <div key={m.id} className="flex justify-center">
+              <figure key={m.id} className="w-full flex justify-center">
                 <img
                   src={m.url}
                   alt="post image"
-                  className="h-auto max-w-full w-auto"
-                  style={{ display: "block" }}
+                  className="block max-w-full h-auto rounded border"
                 />
-              </div>
+              </figure>
             ))}
           </div>
         ) : null}
 
-        {/* YouTube（如果有） */}
+        {/* youtube */}
         {embedUrl ? (
           <div className="rounded border overflow-hidden">
             <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
@@ -191,23 +224,53 @@ export default async function AdminPostPreviewPage({ params }: { params: ParamsL
         ) : null}
 
         {post.youtubeUrl ? (
-          <a className="text-sm underline" href={post.youtubeUrl} target="_blank" rel="noreferrer">
+          <a
+            className={`text-sm underline ${metaLink}`}
+            href={post.youtubeUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
             YouTube 連結（外開）
           </a>
         ) : null}
+
+        {/* ✅ icon row：移到左下角，距離同前台 */}
+        <div className="pt-3 border-t border-neutral-200/70">
+          <div className={`flex items-center justify-between text-sm ${metaText}`}>
+            <div className="flex items-center gap-4">
+              <span className="inline-flex items-center gap-1" title="留言數">
+                💬 <span>{post._count.comments}</span>
+              </span>
+
+              <span className="inline-flex items-center gap-1" title="按讚數">
+                ❤️ <span>{post._count.likes}</span>
+              </span>
+
+              <span className="inline-flex items-center gap-1" title="附件 / 媒體數量">
+                📎 <span>{post._count.media}</span>
+              </span>
+            </div>
+
+            <span className="text-neutral-400 select-none"> </span>
+          </div>
+        </div>
       </article>
 
+      {/* ✅ 留言區：白卡（比照前台） */}
       <section className="space-y-3">
-        <h2 className="font-semibold">留言</h2>
+        <h2 className="font-semibold text-white">留言</h2>
 
         {post.comments.length === 0 ? (
-          <div className="text-neutral-500">目前還沒有留言。</div>
+          <div className="rounded border bg-white text-neutral-900 p-4">
+            <div className="text-neutral-500">目前還沒有留言。</div>
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div className="rounded border bg-white text-neutral-900 p-4 space-y-3">
             {post.comments.map((c: any) => (
               <div key={c.id} className="rounded border p-3">
                 <div className="text-sm text-neutral-500">
-                  {c.author?.name ?? c.author?.email ?? "Unknown"} · {new Date(c.createdAt).toLocaleString("zh-TW")}
+                  {c.author?.name ?? c.author?.email ?? "Unknown"} ·{" "}
+                  {new Date(c.createdAt).toLocaleString("zh-TW")}
                 </div>
                 <div className="whitespace-pre-wrap">{c.content}</div>
               </div>
@@ -215,6 +278,6 @@ export default async function AdminPostPreviewPage({ params }: { params: ParamsL
           </div>
         )}
       </section>
-    </main>
+    </div>
   );
 }
