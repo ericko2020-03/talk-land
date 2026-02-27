@@ -1,3 +1,4 @@
+// path: app/layout.tsx
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -24,10 +25,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {/* ✅ Global container: consistent across ALL pages */}
+        <main className="mx-auto max-w-2xl px-4 sm:px-6 py-6 min-h-screen">
+          {children}
+        </main>
       </body>
     </html>
   );

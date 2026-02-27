@@ -25,27 +25,20 @@ function getYouTubeVideoId(url: string): string | null {
     const u = new URL(url);
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
 
-    // youtu.be/<id>
     if (host === "youtu.be") {
       const id = u.pathname.split("/").filter(Boolean)[0];
       return id ? id : null;
     }
 
-    // youtube.com/*
     if (host === "youtube.com" || host.endsWith(".youtube.com")) {
-      // /watch?v=<id>
       if (u.pathname === "/watch") {
         const id = u.searchParams.get("v");
         return id ? id : null;
       }
-
-      // /shorts/<id>
       if (u.pathname.startsWith("/shorts/")) {
         const id = u.pathname.split("/").filter(Boolean)[1];
         return id ? id : null;
       }
-
-      // /embed/<id>
       if (u.pathname.startsWith("/embed/")) {
         const id = u.pathname.split("/").filter(Boolean)[1];
         return id ? id : null;
@@ -87,14 +80,11 @@ export default async function HomePage() {
   const query: PostsQuery = {
     where: {
       deletedAt: null,
-      // ✅ 首頁只顯示 PUBLIC / LOGIN_ONLY（你原本規則）
-      // ADMIN_ONLY / ADMIN_DRAFT 不在首頁出現（應在後台管理）
       visibility: signedIn ? { in: ["PUBLIC", "LOGIN_ONLY"] } : "PUBLIC",
     },
     orderBy: { createdAt: "desc" },
     include: {
       author: true,
-      // ✅ 列表需要能判斷是否有圖：取第一張就好（避免拉太多）
       media: {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: { id: true, url: true, type: true },
@@ -116,14 +106,12 @@ export default async function HomePage() {
 
   const posts: PostFeedItem[] = await prisma.post.findMany(query);
 
-  // ✅ 統一的「後設資訊列」灰階字色（同時支援桌機白底與手機黑底）
-  const metaText =
-    "text-neutral-500 dark:text-neutral-300";
+  const metaText = "text-neutral-500 dark:text-neutral-300";
   const metaLink =
     "hover:underline hover:text-neutral-700 dark:hover:text-neutral-100";
 
   return (
-    <main className="mx-auto max-w-2xl p-6 space-y-6">
+    <div className="space-y-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Allensay_s 社群</h1>
 
@@ -159,9 +147,6 @@ export default async function HomePage() {
             const likedByMe = signedIn ? (p as any).likes?.length > 0 : false;
             const embedUrl = getYouTubeEmbedUrl(p.youtubeUrl);
 
-            // ✅ 規則 3：
-            // - 有 youtube → 列表只顯示 youtube 畫面（即使有圖也不展示）
-            // - 沒 youtube 且有圖 → 展示第一張圖
             const mediaFirst: any = Array.isArray((p as any).media)
               ? (p as any).media[0]
               : null;
@@ -181,19 +166,21 @@ export default async function HomePage() {
 
             return (
               <article key={p.id} className="rounded border p-4 space-y-3">
-                {/* Top meta row: author + time + visibility icon */}
                 <Link
                   href={`/post/${p.id}`}
                   className={`block text-sm ${metaText} ${metaLink}`}
                 >
                   {p.author?.name ?? p.author?.email ?? "Unknown"} ·{" "}
                   {new Date(p.createdAt).toLocaleString("zh-TW")} ·{" "}
-                  <span title={vis.title} aria-label={vis.title} className="select-none">
+                  <span
+                    title={vis.title}
+                    aria-label={vis.title}
+                    className="select-none"
+                  >
                     {vis.icon}
                   </span>
                 </Link>
 
-                {/* Content preview: clamp to 5 lines */}
                 <div
                   className="whitespace-pre-wrap"
                   style={{
@@ -206,7 +193,6 @@ export default async function HomePage() {
                   {p.content}
                 </div>
 
-                {/* ✅ 列表媒體規則 */}
                 {embedUrl ? (
                   <div className="rounded border overflow-hidden">
                     <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
@@ -231,10 +217,8 @@ export default async function HomePage() {
                   </div>
                 ) : null}
 
-                {/* Bottom meta row: give breathing room + consistent grayscale with top row */}
                 <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800/60">
                   <div className={`flex items-center justify-between text-sm ${metaText}`}>
-                    {/* Left cluster: icons (move heart away from the far right) */}
                     <div className="flex items-center gap-4">
                       <Link
                         href={`/post/${p.id}`}
@@ -251,7 +235,10 @@ export default async function HomePage() {
                         initialCount={p._count.likes}
                       />
 
-                      <span className="inline-flex items-center gap-1" title="附件 / 媒體數量">
+                      <span
+                        className="inline-flex items-center gap-1"
+                        title="附件 / 媒體數量"
+                      >
                         📎 <span>{p._count.media}</span>
                       </span>
 
@@ -268,7 +255,6 @@ export default async function HomePage() {
                       ) : null}
                     </div>
 
-                    {/* Right cluster: CTA (no fixed white; adapts to light/dark) */}
                     <Link
                       href={`/post/${p.id}`}
                       className={`inline-flex items-center gap-1 font-medium ${metaLink}`}
@@ -283,6 +269,6 @@ export default async function HomePage() {
           })
         )}
       </section>
-    </main>
+    </div>
   );
 }

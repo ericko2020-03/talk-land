@@ -33,9 +33,6 @@ export default async function AdminPostsPage() {
   const query: PostsQuery = {
     where: {
       deletedAt: null,
-
-      // ✅ 隱藏「空白草稿」：
-      // visibility=ADMIN_DRAFT 且 content="" 且 youtube=null 且 media=0
       NOT: {
         visibility: "ADMIN_DRAFT",
         content: "",
@@ -46,7 +43,6 @@ export default async function AdminPostsPage() {
     orderBy: { createdAt: "desc" },
     include: {
       author: true,
-      // ✅ 後台列表要跟首頁同款：需要第一張媒體（for cover）
       media: {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: { id: true, url: true, type: true },
@@ -60,7 +56,7 @@ export default async function AdminPostsPage() {
   const posts: PostAdminItem[] = await prisma.post.findMany(query);
 
   return (
-    <main className="mx-auto max-w-2xl p-6 space-y-6 bg-white text-neutral-900 min-h-screen">
+    <div className="space-y-6 bg-white text-neutral-900 min-h-screen">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">後台｜文章管理</h1>
         <nav className="flex items-center gap-4 text-sm">
@@ -100,6 +96,6 @@ export default async function AdminPostsPage() {
           />
         )}
       </section>
-    </main>
+    </div>
   );
 }
