@@ -106,24 +106,32 @@ export default async function HomePage() {
 
   const posts: PostFeedItem[] = await prisma.post.findMany(query);
 
-  // ✅ 卡片內固定白底 → meta 直接用白底灰階（不依賴 dark）
+  // ✅ 卡片內固定白底：meta 用白底灰階
   const metaText = "text-neutral-600";
   const metaLink = "hover:underline hover:text-neutral-900";
 
+  // ✅ 外層（頁面背景）：
+  // - 手機：黑底白字
+  // - 桌機：回到白底系統（透明背景 + 深色字）
+  const pageShell = "space-y-6 bg-black text-white sm:bg-transparent sm:text-neutral-900";
+
+  const topLink = "underline text-white hover:text-white/80 sm:text-neutral-900 sm:hover:text-neutral-700";
+
   return (
-    // ✅ 外圍黑底白字（先只做首頁，不改全站）
-    <div className="space-y-6 bg-black text-white rounded">
+    <div className={pageShell}>
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Allensay_s 社群</h1>
+        <h1 className="text-2xl font-bold text-white sm:text-neutral-900">
+          Allensay_s 社群
+        </h1>
 
         <nav className="flex items-center gap-4 text-sm">
           {signedIn ? (
-            <Link className="underline" href="/api/auth/signout?callbackUrl=/">
+            <Link className={topLink} href="/api/auth/signout?callbackUrl=/">
               登出
             </Link>
           ) : (
             <Link
-              className="underline"
+              className={topLink}
               href={`/api/auth/signin?callbackUrl=${encodeURIComponent("/")}`}
             >
               登入
@@ -131,7 +139,7 @@ export default async function HomePage() {
           )}
 
           {isAdmin ? (
-            <Link className="underline" href="/admin/posts">
+            <Link className={topLink} href="/admin/posts">
               後台管理
             </Link>
           ) : null}
@@ -140,7 +148,7 @@ export default async function HomePage() {
 
       <section className="space-y-4">
         {posts.length === 0 ? (
-          <div className="text-neutral-300">
+          <div className="text-neutral-300 sm:text-neutral-500">
             目前還沒有{signedIn ? "貼文" : "公開貼文"}。
           </div>
         ) : (
@@ -166,7 +174,6 @@ export default async function HomePage() {
             const vis = visibilityIcon(String((p as any).visibility));
 
             return (
-              // ✅ 卡片固定白底黑字
               <article key={p.id} className="rounded border bg-white text-neutral-900 p-4 space-y-3">
                 <Link
                   href={`/post/${p.id}`}
@@ -174,11 +181,7 @@ export default async function HomePage() {
                 >
                   {p.author?.name ?? p.author?.email ?? "Unknown"} ·{" "}
                   {new Date(p.createdAt).toLocaleString("zh-TW")} ·{" "}
-                  <span
-                    title={vis.title}
-                    aria-label={vis.title}
-                    className="select-none"
-                  >
+                  <span title={vis.title} aria-label={vis.title} className="select-none">
                     {vis.icon}
                   </span>
                 </Link>
