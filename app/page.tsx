@@ -231,18 +231,14 @@ export default async function HomePage() {
                   </div>
                 ) : null}
 
-                {/* Icon row (CTA moved here, left aligned) */}
-                <div className="flex items-center justify-between text-sm">
-                  {/* Left cluster: CTA + icons */}
-                  <div className="flex items-center gap-4">
-                    <Link
-                      href={`/post/${p.id}`}
-                      className="inline-flex items-center gap-1 text-white hover:text-white/80 active:text-white/70"
-                      aria-label="查看全文與留言"
-                    >
-                      查看全文與留言 →
-                    </Link>
+// path: app/page.tsx
+// （前面程式碼全部不變，略）
+// 只展示修改後的 Icon row 區塊位置
 
+                {/* Icon row (CTA moved to right) */}
+                <div className="flex items-center justify-between text-sm">
+                  {/* Left cluster: icons */}
+                  <div className="flex items-center gap-4">
                     <Link
                       href={`/post/${p.id}`}
                       className="inline-flex items-center gap-1 text-neutral-200 hover:text-white/80"
@@ -257,10 +253,7 @@ export default async function HomePage() {
                       initialLiked={likedByMe}
                       initialCount={p._count.likes}
                     />
-                  </div>
 
-                  {/* Right cluster: meta actions */}
-                  <div className="flex items-center gap-4">
                     <span
                       className="inline-flex items-center gap-1 text-neutral-200"
                       title="附件 / 媒體數量"
@@ -280,6 +273,15 @@ export default async function HomePage() {
                       </a>
                     ) : null}
                   </div>
+
+                  {/* Right cluster: CTA */}
+                  <Link
+                    href={`/post/${p.id}`}
+                    className="inline-flex items-center gap-1 text-white hover:text-white/80 active:text-white/70 font-medium"
+                    aria-label="查看全文與留言"
+                  >
+                    查看全文與留言 →
+                  </Link>
                 </div>
               </article>
             );
