@@ -62,7 +62,9 @@ function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
   if (!youtubeUrl) return null;
   const id = getYouTubeVideoId(youtubeUrl);
   if (!id) return null;
-  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0&modestbranding=1`;
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+    id
+  )}?rel=0&modestbranding=1`;
 }
 
 function looksLikeImageUrl(url: string) {
@@ -155,7 +157,9 @@ export default async function HomePage() {
             // ✅ 規則 3：
             // - 有 youtube → 列表只顯示 youtube 畫面（即使有圖也不展示）
             // - 沒 youtube 且有圖 → 展示第一張圖
-            const mediaFirst: any = Array.isArray((p as any).media) ? (p as any).media[0] : null;
+            const mediaFirst: any = Array.isArray((p as any).media)
+              ? (p as any).media[0]
+              : null;
             const firstImageUrl =
               !embedUrl && mediaFirst
                 ? (() => {
@@ -178,7 +182,11 @@ export default async function HomePage() {
                 >
                   {p.author?.name ?? p.author?.email ?? "Unknown"} ·{" "}
                   {new Date(p.createdAt).toLocaleString("zh-TW")} ·{" "}
-                  <span title={vis.title} aria-label={vis.title} className="select-none">
+                  <span
+                    title={vis.title}
+                    aria-label={vis.title}
+                    className="select-none"
+                  >
                     {vis.icon}
                   </span>
                 </Link>
@@ -223,47 +231,55 @@ export default async function HomePage() {
                   </div>
                 ) : null}
 
-                {/* CTA */}
-                <div className="text-sm">
-                  <Link
-                    href={`/post/${p.id}`}
-                    className="text-neutral-700 hover:underline"
-                  >
-                    查看全文與留言 →
-                  </Link>
-                </div>
-
-                {/* Icon row */}
-                <div className="flex items-center gap-4 text-sm">
-                  <Link
-                    href={`/post/${p.id}`}
-                    className="inline-flex items-center gap-1 text-neutral-700 hover:underline"
-                  >
-                    💬 <span className="text-neutral-600">{p._count.comments}</span>
-                  </Link>
-
-                  <LikeButton
-                    postId={p.id}
-                    signedIn={signedIn}
-                    initialLiked={likedByMe}
-                    initialCount={p._count.likes}
-                  />
-
-                  <span className="inline-flex items-center gap-1" title="附件 / 媒體數量">
-                    📎 <span className="text-neutral-600">{p._count.media}</span>
-                  </span>
-
-                  {p.youtubeUrl ? (
-                    <a
-                      className="text-neutral-700 hover:underline"
-                      href={p.youtubeUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="YouTube 外開"
+                {/* Icon row (CTA moved here, left aligned) */}
+                <div className="flex items-center justify-between text-sm">
+                  {/* Left cluster: CTA + icons */}
+                  <div className="flex items-center gap-4">
+                    <Link
+                      href={`/post/${p.id}`}
+                      className="inline-flex items-center gap-1 text-white hover:text-white/80 active:text-white/70"
+                      aria-label="查看全文與留言"
                     >
-                      YouTube
-                    </a>
-                  ) : null}
+                      查看全文與留言 →
+                    </Link>
+
+                    <Link
+                      href={`/post/${p.id}`}
+                      className="inline-flex items-center gap-1 text-neutral-200 hover:text-white/80"
+                      aria-label="查看留言"
+                    >
+                      💬 <span className="text-neutral-300">{p._count.comments}</span>
+                    </Link>
+
+                    <LikeButton
+                      postId={p.id}
+                      signedIn={signedIn}
+                      initialLiked={likedByMe}
+                      initialCount={p._count.likes}
+                    />
+                  </div>
+
+                  {/* Right cluster: meta actions */}
+                  <div className="flex items-center gap-4">
+                    <span
+                      className="inline-flex items-center gap-1 text-neutral-200"
+                      title="附件 / 媒體數量"
+                    >
+                      📎 <span className="text-neutral-300">{p._count.media}</span>
+                    </span>
+
+                    {p.youtubeUrl ? (
+                      <a
+                        className="text-neutral-200 hover:text-white/80"
+                        href={p.youtubeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="YouTube 外開"
+                      >
+                        YouTube
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
               </article>
             );
