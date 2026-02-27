@@ -13,11 +13,6 @@ export const revalidate = 0;
 type PostsQuery = Parameters<typeof prisma.post.findMany>[0];
 type PostAdminItem = Awaited<ReturnType<typeof prisma.post.findMany>>[number];
 
-function previewText(content: string, n = 120) {
-  const s = (content ?? "").replace(/\s+/g, " ").trim();
-  return s.length > n ? `${s.slice(0, n)}…` : s;
-}
-
 export default async function AdminPostsPage() {
   const session = await getServerSession(authOptions);
 
@@ -51,6 +46,12 @@ export default async function AdminPostsPage() {
     orderBy: { createdAt: "desc" },
     include: {
       author: true,
+      // ✅ 後台列表要跟首頁同款：需要第一張媒體（for cover）
+      media: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: { id: true, url: true, type: true },
+        take: 1,
+      },
       _count: { select: { comments: true, likes: true, media: true } },
     },
     take: 200,
@@ -72,21 +73,30 @@ export default async function AdminPostsPage() {
         </nav>
       </header>
 
-      <section className="space-y-3">
+      <section className="space-y-4">
         {posts.length === 0 ? (
           <div className="text-neutral-500">目前沒有貼文。</div>
         ) : (
           <AdminPostsListClient
-            posts={posts.map((p) => ({
-              id: p.id,
-              createdAt: p.createdAt.toISOString(),
-              visibility: String(p.visibility),
-              authorLabel: p.author?.name ?? p.author?.email ?? "Unknown",
-              preview: previewText(p.content, 140),
-              countComments: p._count.comments,
-              countLikes: p._count.likes,
-              countMedia: p._count.media,
-            }))}
+            posts={posts.map((p) => {
+              const mediaFirst: any = Array.isArray((p as any).media)
+                ? (p as any).media[0]
+                : null;
+
+              return {
+                id: p.id,
+                createdAt: p.createdAt.toISOString(),
+                visibility: String((p as any).visibility),
+                authorLabel: p.author?.name ?? p.author?.email ?? "Unknown",
+                content: String(p.content ?? ""),
+                youtubeUrl: (p as any).youtubeUrl ? String((p as any).youtubeUrl) : null,
+                mediaFirstUrl: mediaFirst?.url ? String(mediaFirst.url) : null,
+                mediaFirstType: mediaFirst?.type ? String(mediaFirst.type) : null,
+                countComments: p._count.comments,
+                countLikes: p._count.likes,
+                countMedia: p._count.media,
+              };
+            })}
           />
         )}
       </section>
