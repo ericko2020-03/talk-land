@@ -1,4 +1,5 @@
 // path: app/admin/posts/new/page.tsx
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -22,11 +23,24 @@ export default async function NewPostPage() {
     redirect("/");
   }
 
-  // ✅ 不再額外套 container（全站由 layout 統一）
-  // ✅ 後台頁統一黑底白字外殼 + 內容白卡（由 PostForm 負責）
   return (
-    <div className="space-y-6 bg-black text-white">
-      <PostForm />
-    </div>
+    <main className="min-h-screen bg-white text-neutral-900">
+      <div className="mx-auto max-w-2xl p-6 space-y-6">
+        <header className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold">新增貼文</h1>
+          <nav className="flex items-center gap-4 text-sm">
+            <Link className="underline" href="/admin/posts">
+              回文章列表
+            </Link>
+            <Link className="underline" href="/">
+              回首頁
+            </Link>
+          </nav>
+        </header>
+
+        {/* ✅ 單一白底卡片：所有操作都放進同一張卡 */}
+        <PostForm />
+      </div>
+    </main>
   );
 }

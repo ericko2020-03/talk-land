@@ -1,7 +1,6 @@
 // path: app/admin/posts/new/PostForm.tsx
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
@@ -39,6 +38,7 @@ export default function PostForm() {
   const [content, setContent] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("ADMIN_DRAFT");
+
   const [error, setError] = useState<string | null>(null);
 
   const [createdPostId, setCreatedPostId] = useState<string | null>(null);
@@ -53,12 +53,27 @@ export default function PostForm() {
   const draftCreatingRef = useRef(false);
   const draftIdRef = useRef<string | null>(null);
 
-  // 用來做「是否已儲存」的粗略判斷（只針對 textarea 文字需求）
-  const lastSavedContentRef = useRef<string>("");
+  // ✅ 用來判斷是否「未儲存變更」
+  const lastSavedRef = useRef<{ content: string; youtubeUrl: string; visibility: Visibility } | null>(null);
 
   const hasText = useMemo(() => content.trim().length > 0, [content]);
   const hasPickedFiles = files.length > 0;
   const hasAnyImages = attachedCount > 0 || hasPickedFiles;
+  const normalizedYt = useMemo(() => normalizeYoutubeUrl(youtubeUrl), [youtubeUrl]);
+
+  const isDirty = useMemo(() => {
+    const last = lastSavedRef.current;
+    if (!last) {
+      // draft 還沒真的 save 過：只要有文字或 yt 或選圖，就視為 dirty
+      return content.trim().length > 0 || !!normalizedYt || files.length > 0;
+    }
+    return (
+      last.content !== content ||
+      last.youtubeUrl !== youtubeUrl ||
+      last.visibility !== visibility ||
+      files.length > 0 // 已選未上傳也算 dirty
+    );
+  }, [content, youtubeUrl, visibility, files.length, normalizedYt]);
 
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => {
@@ -91,7 +106,7 @@ export default function PostForm() {
     setFiles(combined);
   }
 
-  // ✅ 進頁：同 session 只允許 1 個空草稿（原則不變）
+  // ✅ 進頁：同 session 只允許 1 個空草稿（原則不變，但不顯示提示）
   useEffect(() => {
     let mounted = true;
 
@@ -103,12 +118,11 @@ export default function PostForm() {
       setError(null);
 
       try {
-        const cached =
-          typeof window !== "undefined" ? window.sessionStorage.getItem(DRAFT_KEY) : null;
-
+        const cached = typeof window !== "undefined" ? window.sessionStorage.getItem(DRAFT_KEY) : null;
         if (cached && cached.trim()) {
           const id = cached.trim();
           if (!mounted) return;
+
           draftIdRef.current = id;
           setCreatedPostId(id);
           draftCreatingRef.current = false;
@@ -136,8 +150,6 @@ export default function PostForm() {
         draftIdRef.current = id;
         setCreatedPostId(id);
         window.sessionStorage.setItem(DRAFT_KEY, id);
-
-        startTransition(() => router.refresh());
       } catch (err) {
         console.error("[draft] threw", err);
         const msg = err instanceof Error ? err.message : String(err);
@@ -155,27 +167,7 @@ export default function PostForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ 只要草稿已經「不是空白狀態」，就把 session draft key 清掉，避免下次誤用（原則不變）
-  useEffect(() => {
-    if (!createdPostId) return;
-
-    const isEmptyDraft =
-      visibility === "ADMIN_DRAFT" &&
-      content.trim().length === 0 &&
-      attachedCount === 0 &&
-      files.length === 0 &&
-      !normalizeYoutubeUrl(youtubeUrl);
-
-    if (!isEmptyDraft) {
-      try {
-        window.sessionStorage.removeItem(DRAFT_KEY);
-      } catch {
-        // ignore
-      }
-    }
-  }, [createdPostId, visibility, content, attachedCount, files.length, youtubeUrl]);
-
-  // ✅ 離頁：若仍是空白草稿 → 刪除（best-effort）（原本就有，保留）
+  // ✅ 離頁：若仍是空白草稿 → 刪除（best-effort）
   useEffect(() => {
     function shouldDeleteEmptyDraft() {
       const id = draftIdRef.current;
@@ -227,24 +219,8 @@ export default function PostForm() {
     };
   }, [visibility, content, attachedCount, files.length, youtubeUrl]);
 
-  async function saveWithVisibility(targetVisibility: Visibility) {
-    if (!createdPostId || isPending) return { ok: false as const };
-
-    setError(null);
-
-    // 非草稿：必須「有文字 or 有圖」
-    if (targetVisibility !== "ADMIN_DRAFT") {
-      if (!hasText && !hasAnyImages) {
-        setError("請至少輸入文字或上傳圖片後再發佈（允許只有圖片、文字空白）。");
-        return { ok: false as const };
-      }
-    }
-
-    const payload = {
-      content,
-      youtubeUrl: normalizeYoutubeUrl(youtubeUrl),
-      visibility: targetVisibility,
-    };
+  async function patchSave(payload: { content: string; youtubeUrl: string | null; visibility: Visibility }) {
+    if (!createdPostId) return { ok: false as const, err: "草稿尚未建立完成，請稍後再試。" };
 
     try {
       const res = await fetch(`/api/admin/posts/${createdPostId}`, {
@@ -257,60 +233,77 @@ export default function PostForm() {
       const data = safeJsonParse(text) ?? {};
 
       if (!res.ok) {
-        console.error("[save] failed", res.status, text);
-        setError(`儲存失敗：HTTP ${res.status} / ${(data as any)?.error ?? text ?? "unknown"}`);
-        return { ok: false as const };
+        console.error("[PATCH] failed", res.status, text);
+        return { ok: false as const, err: `儲存失敗：HTTP ${res.status} / ${(data as any)?.error ?? text ?? "unknown"}` };
       }
 
-      // 記錄最後一次儲存的內容（用於「離開前自動存草稿」判斷）
-      lastSavedContentRef.current = content;
-
-      startTransition(() => router.refresh());
+      // ✅ 設為已保存基準
+      lastSavedRef.current = { content, youtubeUrl, visibility };
       return { ok: true as const };
     } catch (err) {
-      console.error("[save] threw", err);
+      console.error("[PATCH] threw", err);
       const msg = err instanceof Error ? err.message : String(err);
-      setError(`儲存時網路錯誤：${msg}`);
-      return { ok: false as const };
+      return { ok: false as const, err: `儲存時網路錯誤：${msg}` };
     }
   }
 
-  // ✅ 儲存草稿/發布（按鈕在最下方）
-  async function onClickSave() {
-    if (!createdPostId) return;
+  // ✅ 儲存/發布（按鈕用）
+  async function saveOrPublish() {
+    if (!createdPostId || isPending) return;
+    setError(null);
 
-    const target = visibility;
-    const r = await saveWithVisibility(target);
+    // 非草稿：必須「有文字 or 有圖 or YouTube」
+    if (visibility !== "ADMIN_DRAFT") {
+      const hasAnyContent = hasText || hasAnyImages || !!normalizedYt;
+      if (!hasAnyContent) {
+        setError("請至少輸入文字、上傳圖片或提供 YouTube 連結後再發佈。");
+        return;
+      }
+    }
 
-    // ✅ 發布/更新（非草稿）成功 → 跳後台查看
-    if (r.ok && target !== "ADMIN_DRAFT") {
+    const payload = {
+      content,
+      youtubeUrl: normalizedYt,
+      visibility,
+    } as const;
+
+    const r = await patchSave(payload);
+    if (!r.ok) {
+      setError(r.err);
+      return;
+    }
+
+    startTransition(() => router.refresh());
+
+    // ✅ 發佈/更新：跳到後台查看；草稿：留在本頁
+    if (visibility !== "ADMIN_DRAFT") {
       router.push(`/admin/posts/${createdPostId}`);
     }
   }
 
-  // ✅ 點回文章列表/首頁時：若 textarea 有文字且「尚未儲存」→ 自動存為草稿後再跳
-  async function maybeAutosaveDraftThenNavigate(href: string) {
-    // 只依你需求：有文字才觸發
+  // ✅ 自動儲存草稿後再跳轉（只在「有文字且尚未儲存」時觸發）
+  async function navigateWithAutoDraft(href: string) {
     if (!createdPostId) {
       router.push(href);
       return;
     }
 
-    const now = content.trim();
-    const last = (lastSavedContentRef.current ?? "").trim();
-    const hasUnsavedText = now.length > 0 && now !== last;
-
-    if (!hasUnsavedText) {
-      router.push(href);
-      return;
+    // 只處理「文字區有內容」且 dirty 的情境（你指定的規則）
+    if (content.trim().length > 0 && isDirty) {
+      setError(null);
+      const r = await patchSave({
+        content,
+        youtubeUrl: normalizedYt,
+        // 強制草稿保存最安全（即使你目前選了 PUBLIC，也先保住內容）
+        visibility: "ADMIN_DRAFT",
+      });
+      if (!r.ok) {
+        setError(r.err);
+        return; // 儲存失敗就不要跳轉，避免內容消失
+      }
     }
 
-    // 強制存成 ADMIN_DRAFT（不管目前 select 選了什麼）
-    const r = await saveWithVisibility("ADMIN_DRAFT");
-    if (r.ok) {
-      router.push(href);
-    }
-    // 若失敗：留在頁面並顯示 error（setError 已做）
+    router.push(href);
   }
 
   async function uploadImages() {
@@ -414,79 +407,20 @@ export default function PostForm() {
     }
   }
 
-  // =========================
-  // UI style helpers
-  // =========================
-  const topLink = "underline text-white hover:text-white/80";
-  const card = "rounded border bg-white text-neutral-900 p-4";
-  const metaText = "text-sm text-neutral-600";
-  const primaryBtn =
-    "rounded bg-neutral-800 px-4 py-2 text-white hover:bg-neutral-700 disabled:opacity-50";
-  const secondaryBtn =
-    "rounded border px-4 py-2 text-sm hover:bg-neutral-50 disabled:opacity-50";
-
   return (
-    <div className="space-y-6">
-      {/* ✅ Header（需要攔截跳轉 → 自動存草稿） */}
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">新增貼文</h1>
-        <nav className="flex items-center gap-4 text-sm">
-          <button
-            type="button"
-            className={topLink}
-            onClick={() => void maybeAutosaveDraftThenNavigate("/admin/posts")}
-          >
-            回文章列表
-          </button>
-          <button
-            type="button"
-            className={topLink}
-            onClick={() => void maybeAutosaveDraftThenNavigate("/")}
-          >
-            回首頁
-          </button>
-        </nav>
-      </header>
-
-      {/* ✅ 錯誤提示（保留） */}
+    <article className="rounded border bg-white text-neutral-900 p-4 space-y-6">
       {error ? (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
       ) : null}
 
-      {/* ✅ 只保留貼文 ID（不再顯示「草稿已建立」banner） */}
-      <div className={card}>
-        {createdPostId ? (
-          <div className="space-y-2">
-            <div className={metaText}>
-              貼文 ID：<span className="font-mono">{createdPostId}</span>
-            </div>
-
-            {/* ✅ 第二列靠右：後台查看 → 前台查看 → 回文章列表 */}
-            <div className="flex justify-end gap-4 text-sm">
-              <a className="underline" href={`/admin/posts/${createdPostId}`} target="_blank" rel="noreferrer">
-                後台查看
-              </a>
-              <a className="underline" href={`/post/${createdPostId}`} target="_blank" rel="noreferrer">
-                前台查看
-              </a>
-              <button
-                type="button"
-                className="underline"
-                onClick={() => void maybeAutosaveDraftThenNavigate("/admin/posts")}
-              >
-                回文章列表
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-sm text-neutral-600">建立草稿中…</div>
-        )}
+      {/* ✅ ID 保留（但不再加那排連結） */}
+      <div className="text-sm text-neutral-600">
+        貼文 ID：{" "}
+        <span className="font-mono">{createdPostId ? createdPostId : "建立中…"}</span>
       </div>
 
-      {/* ✅ 內容編輯（白卡） */}
-      <section className={card + " space-y-3"}>
+      {/* 內容編輯 */}
+      <section className="space-y-3">
         <textarea
           className="w-full rounded border p-3 h-48"
           placeholder="寫點什麼…（允許留空，只要你有上傳圖片）"
@@ -514,19 +448,15 @@ export default function PostForm() {
             <option value="ADMIN_DRAFT">{visibilityLabel("ADMIN_DRAFT")}</option>
           </select>
 
-          <div className="text-xs text-neutral-500">
-            {visibility === "ADMIN_DRAFT" ? "全空時只能維持草稿" : null}
-          </div>
+          {/* ✅ 取消右側提示：「全空時只能維持草稿」 */}
         </div>
       </section>
 
-      {/* ✅ 圖片上傳（白卡） */}
-      <section className={card + " space-y-3"}>
+      {/* 圖片上傳 */}
+      <section className="space-y-3">
         <div>
           <div className="font-semibold">圖片附件</div>
-          <div className="text-sm text-neutral-600">
-            每篇最多 {MAX_FILES} 張，單張 ≤ 5MB
-          </div>
+          <div className="text-sm text-neutral-600">每篇最多 {MAX_FILES} 張，單張 ≤ 5MB</div>
           <div className="text-sm text-neutral-600">已附加：{attachedCount} 張</div>
         </div>
 
@@ -550,7 +480,7 @@ export default function PostForm() {
           </label>
 
           {files.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="text-sm text-neutral-600">即將上傳：{files.length} 張</div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -566,7 +496,7 @@ export default function PostForm() {
                   type="button"
                   onClick={uploadImages}
                   disabled={uploading || !createdPostId}
-                  className={primaryBtn}
+                  className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
                 >
                   {uploading ? "上傳中..." : "上傳圖片"}
                 </button>
@@ -575,7 +505,7 @@ export default function PostForm() {
                   type="button"
                   onClick={() => setFiles([])}
                   disabled={uploading}
-                  className={secondaryBtn}
+                  className="rounded border px-4 py-2 text-sm disabled:opacity-50"
                 >
                   清空已選
                 </button>
@@ -585,18 +515,36 @@ export default function PostForm() {
         </div>
       </section>
 
-      {/* ✅ 儲存/發布：移到最下方（依你要求） */}
-      <div className="flex justify-end">
-        <button
-          className={primaryBtn}
-          type="button"
-          disabled={!createdPostId || isPending}
-          onClick={() => void onClickSave()}
-          title={!createdPostId ? "草稿建立中" : undefined}
-        >
-          {isPending ? "儲存中..." : visibility === "ADMIN_DRAFT" ? "儲存草稿" : "發佈 / 更新"}
-        </button>
-      </div>
-    </div>
+      {/* ✅ 最下方：儲存/發佈按鈕（放在同一張卡片內，黑底清楚） */}
+      <section className="pt-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-3">
+          <button
+            className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+            type="button"
+            disabled={!createdPostId || isPending}
+            onClick={saveOrPublish}
+            title={!createdPostId ? "草稿建立中" : undefined}
+          >
+            {isPending ? "儲存中..." : visibility === "ADMIN_DRAFT" ? "儲存草稿" : "發佈 / 更新"}
+          </button>
+        </div>
+
+        {/* ✅ 你要的「離開頁面會自動存草稿」是針對點連結；
+            這裡提供可控的離開按鈕（避免 Link 無法攔截）
+        */}
+        <div className="flex items-center gap-4 text-sm">
+          <button
+            type="button"
+            className="underline"
+            onClick={() => void navigateWithAutoDraft("/admin/posts")}
+          >
+            回文章列表
+          </button>
+          <button type="button" className="underline" onClick={() => void navigateWithAutoDraft("/")}>
+            回首頁
+          </button>
+        </div>
+      </section>
+    </article>
   );
 }
