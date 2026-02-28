@@ -29,17 +29,14 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // ✅ 規則：
-  // - 手機：外殼黑底白字（卡片自己白底黑字）
-  // - 桌機：全站白底黑字
   const pageShell =
     "min-h-screen bg-black text-white sm:bg-white sm:text-neutral-900";
 
-  // ✅ 寬度策略（關鍵修正）
-  // - 手機/小平板：永遠 max-w-none，吃滿螢幕
-  // - 到大螢幕（lg）才收斂成閱讀寬度
+  // ✅ 寬度策略
+  // - 手機：吃滿（max-w-none）
+  // - 桌機：改成約原本 2/3（max-w-4xl）
   const container =
-    "mx-auto w-full max-w-none px-3 py-5 sm:px-4 sm:py-8 lg:px-6 lg:max-w-5xl";
+    "mx-auto w-full max-w-none px-3 py-5 sm:px-4 sm:py-8 lg:px-6 lg:max-w-4xl";
 
   return (
     <html lang="zh-Hant">
