@@ -31,9 +31,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   // ✅ 統一寬度與內距
   // - 手機永遠滿版
-  // - 桌機縮為較窄（與後台一致）：max-w-3xl
-  const container =
-    "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8 sm:max-w-3xl";
+  // - 桌機：不要在 root layout 限制 max-width，避免把後台也一起鎖死
+  const container = "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8";
 
   return (
     <html lang="zh-Hant">
