@@ -23,7 +23,11 @@ export default async function AdminEditPostPage({
 
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(`/admin/posts/${id}/edit`)}`);
+    redirect(
+      `/api/auth/signin?callbackUrl=${encodeURIComponent(
+        `/admin/posts/${id}/edit`
+      )}`
+    );
   }
 
   const role = (session.user as any).role;
@@ -53,7 +57,7 @@ export default async function AdminEditPostPage({
 
   if (!post || post.deletedAt) {
     return (
-      <main className="mx-auto max-w-2xl p-6 space-y-4">
+      <main className="p-6 space-y-4">
         <div>找不到貼文或已刪除</div>
         <Link className="underline" href="/admin/posts">
           回文章列表
@@ -63,7 +67,7 @@ export default async function AdminEditPostPage({
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-6 space-y-6">
+    <main className="p-6 space-y-6">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">編輯貼文</h1>
         <nav className="flex items-center gap-4 text-sm">
