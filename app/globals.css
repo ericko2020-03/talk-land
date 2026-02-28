@@ -1,3 +1,4 @@
+/* path: app/globals.css */
 @import "tailwindcss";
 
 :root {
@@ -12,15 +13,39 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* 全站基底：固定白底黑字（不跟 OS 深色模式） */
+html,
+body {
+  height: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* =========================================================
+   Design System (MVP)
+   - 手機外殼：黑底白字（由 layout 的 pageShell 控制）
+   - 卡片：白底黑字（統一用 .as-card）
+   - 桌機：外殼白底黑字 + 卡片維持白底黑字
+   ========================================================= */
+
+@layer components {
+  /* ✅ 統一卡片：文章卡 / 工作區塊 */
+  .as-card {
+    @apply rounded-xl bg-white text-neutral-900 border border-neutral-200;
+    @apply shadow-sm;
+  }
+
+  /* ✅ 卡片內距：常用變體（視需要用） */
+  .as-card-pad {
+    @apply p-4 sm:p-5;
+  }
+
+  /* ✅ 手機：黑底外殼時，卡片外圍常見的間距 */
+  .as-card-stack {
+    @apply space-y-4;
+  }
 }
