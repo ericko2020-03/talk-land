@@ -31,15 +31,7 @@ export default async function AdminPostsPage() {
   }
 
   const query: PostsQuery = {
-    where: {
-      deletedAt: null,
-      NOT: {
-        visibility: "ADMIN_DRAFT",
-        content: "",
-        youtubeUrl: null,
-        media: { none: {} },
-      },
-    },
+    where: { deletedAt: null },
     orderBy: { createdAt: "desc" },
     include: {
       author: true,
@@ -55,15 +47,12 @@ export default async function AdminPostsPage() {
 
   const posts: PostAdminItem[] = await prisma.post.findMany(query);
 
-  // ✅ 與前台首頁一致的內層殼（讓後台寬度/留白感一致）
-  // - 手機：黑底白字（殼）
-  // - 桌機：透明（交給 RootLayout 的白底黑字）
   const pageShell =
-    "space-y-6 bg-black text-white sm:bg-transparent sm:text-neutral-900";
+    "w-full space-y-6 bg-black text-white sm:bg-transparent sm:text-neutral-900";
 
   return (
     <div className={pageShell}>
-      <header className="flex items-center justify-between">
+      <header className="w-full flex items-center justify-between">
         <h1 className="text-2xl font-bold">後台｜文章管理</h1>
         <nav className="flex items-center gap-4 text-sm">
           <Link className="underline" href="/">
@@ -75,34 +64,22 @@ export default async function AdminPostsPage() {
         </nav>
       </header>
 
-      <section className="space-y-4">
-        {posts.length === 0 ? (
-          <div className="text-neutral-200 sm:text-neutral-500">目前沒有貼文。</div>
-        ) : (
-          <AdminPostsListClient
-            posts={posts.map((p) => {
-              const mediaFirst: any = Array.isArray((p as any).media)
-                ? (p as any).media[0]
-                : null;
-
-              return {
-                id: p.id,
-                createdAt: p.createdAt.toISOString(),
-                visibility: String((p as any).visibility),
-                authorLabel: p.author?.name ?? p.author?.email ?? "Unknown",
-                content: String(p.content ?? ""),
-                youtubeUrl: (p as any).youtubeUrl
-                  ? String((p as any).youtubeUrl)
-                  : null,
-                mediaFirstUrl: mediaFirst?.url ? String(mediaFirst.url) : null,
-                mediaFirstType: mediaFirst?.type ? String(mediaFirst.type) : null,
-                countComments: p._count.comments,
-                countLikes: p._count.likes,
-                countMedia: p._count.media,
-              };
-            })}
-          />
-        )}
+      <section className="w-full space-y-4">
+        <AdminPostsListClient
+          posts={posts.map((p) => ({
+            id: p.id,
+            createdAt: p.createdAt.toISOString(),
+            visibility: String((p as any).visibility),
+            authorLabel: p.author?.name ?? p.author?.email ?? "Unknown",
+            content: String(p.content ?? ""),
+            youtubeUrl: (p as any).youtubeUrl ?? null,
+            mediaFirstUrl: (p as any).media?.[0]?.url ?? null,
+            mediaFirstType: (p as any).media?.[0]?.type ?? null,
+            countComments: p._count.comments,
+            countLikes: p._count.likes,
+            countMedia: p._count.media,
+          }))}
+        />
       </section>
     </div>
   );

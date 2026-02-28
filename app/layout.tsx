@@ -26,16 +26,18 @@ export const viewport: Viewport = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
+  // 手機黑底，桌機白底
   const pageShell =
     "min-h-screen bg-black text-white sm:bg-white sm:text-neutral-900";
 
-  // ✅ 手機：滿版（max-w-none）
-  // ✅ 桌機：改成較窄（lg:max-w-4xl ≈ 56rem）
+  // 🔥 關鍵修正：
+  // 手機永遠滿版
+  // 桌機直接固定 max-w-4xl（約 2/3）
   const container =
-    "mx-auto w-full max-w-none px-3 py-5 sm:px-4 sm:py-8 lg:px-6 lg:max-w-4xl";
+    "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8 sm:max-w-4xl";
 
   return (
     <html lang="zh-Hant">
