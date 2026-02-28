@@ -25,7 +25,7 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* ✅ 手機：讓 safe-area（狀態列後方）也跟外殼一致黑底白字 */
+/* ✅ 手機：safe-area（狀態列後方）黑底白字 */
 @media (max-width: 639px) {
   html,
   body {
@@ -34,13 +34,10 @@ body {
   }
 }
 
-/* =========================================================
-   Design System (MVP)
-   ========================================================= */
-
 @layer components {
+  /* ✅ 統一卡片（調整圓角成前台一致的視覺：rounded-lg） */
   .as-card {
-    @apply rounded-xl bg-white text-neutral-900 border border-neutral-200;
+    @apply rounded-lg bg-white text-neutral-900 border border-neutral-200;
     @apply shadow-sm;
   }
 
