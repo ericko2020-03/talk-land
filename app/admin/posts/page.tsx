@@ -55,8 +55,14 @@ export default async function AdminPostsPage() {
 
   const posts: PostAdminItem[] = await prisma.post.findMany(query);
 
+  // ✅ 與前台首頁一致的內層殼（讓後台寬度/留白感一致）
+  // - 手機：黑底白字（殼）
+  // - 桌機：透明（交給 RootLayout 的白底黑字）
+  const pageShell =
+    "space-y-6 bg-black text-white sm:bg-transparent sm:text-neutral-900";
+
   return (
-    <div className="space-y-6">
+    <div className={pageShell}>
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">後台｜文章管理</h1>
         <nav className="flex items-center gap-4 text-sm">
@@ -71,7 +77,7 @@ export default async function AdminPostsPage() {
 
       <section className="space-y-4">
         {posts.length === 0 ? (
-          <div className="text-neutral-500">目前沒有貼文。</div>
+          <div className="text-neutral-200 sm:text-neutral-500">目前沒有貼文。</div>
         ) : (
           <AdminPostsListClient
             posts={posts.map((p) => {
