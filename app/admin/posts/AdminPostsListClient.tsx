@@ -90,7 +90,7 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
   const metaLink = "hover:underline hover:text-neutral-900";
 
   return (
-    <>
+    <div className="as-card-stack">
       {posts.map((p) => {
         const adminViewHref = `/admin/posts/${p.id}`; // 後台查看（可看草稿/封鎖）
         const editHref = `/admin/posts/${p.id}/edit`;
@@ -116,7 +116,10 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
         const content = String(p.content ?? "");
 
         return (
-          <article key={p.id} className="rounded border p-4 space-y-3 bg-white text-neutral-900">
+          <article
+            key={p.id}
+            className="as-card as-card-pad w-full space-y-3"
+          >
             {/* Top meta row (similar to Home) */}
             <div className={`text-sm ${metaText} flex flex-wrap items-center gap-2`}>
               <Link className={`${metaLink}`} href={adminViewHref} title="後台查看">
@@ -169,7 +172,7 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
               </div>
             ) : null}
 
-            {/* Bottom meta row (similar placement to Home, but NO '查看全文與留言') */}
+            {/* Bottom meta row */}
             <div className="pt-3 border-t border-neutral-200/70">
               <div className={`flex flex-wrap items-center justify-between gap-3 text-sm ${metaText}`}>
                 <div className="flex flex-wrap items-center gap-4">
@@ -198,7 +201,6 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
                   ) : null}
                 </div>
 
-                {/* (右側留白：後台不放 CTA) */}
                 <span className="text-neutral-400 select-none"> </span>
               </div>
             </div>
@@ -227,6 +229,6 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
           </article>
         );
       })}
-    </>
+    </div>
   );
 }
