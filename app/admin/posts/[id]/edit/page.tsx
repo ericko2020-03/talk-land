@@ -57,37 +57,47 @@ export default async function AdminEditPostPage({
 
   if (!post || post.deletedAt) {
     return (
-      <main className="p-6 space-y-4">
+      <div className="space-y-4">
         <div>找不到貼文或已刪除</div>
         <Link className="underline" href="/admin/posts">
           回文章列表
         </Link>
-      </main>
+      </div>
     );
   }
 
+  // ✅ layout 已統一寬度與背景；這裡只寫內容（對齊 new/page.tsx）
+  const topLink =
+    "underline text-white hover:text-white/80 sm:text-neutral-900 sm:hover:text-neutral-700";
+
   return (
-    <main className="p-6 space-y-6">
+    <div className="space-y-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">編輯貼文</h1>
+        <h1 className="text-xl font-semibold text-white sm:text-neutral-900">
+          編輯貼文
+        </h1>
+
         <nav className="flex items-center gap-4 text-sm">
-          <Link className="underline" href="/admin/posts">
+          <Link className={topLink} href="/admin/posts">
             回文章列表
           </Link>
-          <Link className="underline" href={`/post/${post.id}`}>
+          <Link className={topLink} href={`/post/${post.id}`}>
             前台查看
           </Link>
         </nav>
       </header>
 
-      <EditPostForm
-        key={post.id}
-        postId={post.id}
-        initialContent={post.content}
-        initialYoutubeUrl={post.youtubeUrl ?? ""}
-        initialVisibility={post.visibility as Visibility}
-        initialMedia={post.media}
-      />
-    </main>
+      {/* ✅ 與新增貼文一致：白底卡片包住表單 */}
+      <article className="w-full rounded border bg-white text-neutral-900 p-4">
+        <EditPostForm
+          key={post.id}
+          postId={post.id}
+          initialContent={post.content}
+          initialYoutubeUrl={post.youtubeUrl ?? ""}
+          initialVisibility={post.visibility as Visibility}
+          initialMedia={post.media}
+        />
+      </article>
+    </div>
   );
 }

@@ -9,7 +9,12 @@ type MediaLite = { id: string; url: string; type: string };
 
 const MAX_FILES = 5;
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
 
 function normalizeYoutubeUrl(input: string) {
   const s = (input ?? "").trim();
@@ -38,11 +43,25 @@ async function uploadToServer(file: File) {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = data?.detail || data?.error || `Upload failed: HTTP ${res.status}`;
+    const msg =
+      data?.detail || data?.error || `Upload failed: HTTP ${res.status}`;
     throw new Error(msg);
   }
 
   return data as { key: string; publicUrl: string };
+}
+
+function uniqUrls(urls: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of urls) {
+    const s = String(u ?? "").trim();
+    if (!s) continue;
+    if (seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
 }
 
 export default function EditPostForm(props: {
@@ -57,7 +76,9 @@ export default function EditPostForm(props: {
 
   const [content, setContent] = useState(props.initialContent ?? "");
   const [youtubeUrl, setYoutubeUrl] = useState(props.initialYoutubeUrl ?? "");
-  const [visibility, setVisibility] = useState<Visibility>(props.initialVisibility ?? "ADMIN_DRAFT");
+  const [visibility, setVisibility] = useState<Visibility>(
+    props.initialVisibility ?? "ADMIN_DRAFT"
+  );
 
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -66,12 +87,31 @@ export default function EditPostForm(props: {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  const existingImages = useMemo(
-    () => props.initialMedia.filter((m) => String(m.type || "").toUpperCase() === "IMAGE"),
+  const serverExistingImages = useMemo(
+    () =>
+      props.initialMedia.filter(
+        (m) => String(m.type || "").toUpperCase() === "IMAGE"
+      ),
     [props.initialMedia]
   );
 
-  const remainingSlots = Math.max(0, MAX_FILES - existingImages.length);
+  // ✅ 立即顯示規則：成功上傳/attach 後，直接把 URL 加進這個 state（仿照 new/PostForm.tsx）
+  const [attachedUrls, setAttachedUrls] = useState<string[]>(() =>
+    uniqUrls(serverExistingImages.map((m) => m.url))
+  );
+
+  // 當 server refresh 回來（props.initialMedia 更新）時，也同步 attachedUrls（避免 client 與 DB 不一致）
+  useEffect(() => {
+    setAttachedUrls((prev) =>
+      uniqUrls([...prev, ...serverExistingImages.map((m) => m.url)])
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverExistingImages.map((m) => m.url).join("|")]);
+
+  const remainingSlots = useMemo(() => {
+    // 以「已顯示的 attachedUrls」為準，避免剛上傳成功但尚未 refresh 時，還能繼續超過上限
+    return Math.max(0, MAX_FILES - attachedUrls.length);
+  }, [attachedUrls.length]);
 
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
 
@@ -84,11 +124,12 @@ export default function EditPostForm(props: {
   }, [previews.join("|")]);
 
   const hasText = useMemo(() => content.trim().length > 0, [content]);
-  const hasAnyImages = useMemo(() => existingImages.length > 0 || files.length > 0, [existingImages.length, files.length]);
+  const hasAnyImages = useMemo(
+    () => attachedUrls.length > 0 || files.length > 0,
+    [attachedUrls.length, files.length]
+  );
 
-  // ✅ 送出規則：
-  // - 草稿：允許全空
-  // - 非草稿：必須「有文字 or 有圖」
+  // ✅ 送出規則：草稿可全空；非草稿需至少文字或圖片（沿用既有邏輯）
   const canSubmit = useMemo(() => {
     if (visibility === "ADMIN_DRAFT") return true;
     return hasText || hasAnyImages;
@@ -102,7 +143,6 @@ export default function EditPostForm(props: {
     setSaved(false);
 
     const payload = {
-      // ✅ 允許留白，但保留尾端合理結構（不要用 trim() 把整段語意吃掉）
       content: String(content ?? "").trimEnd(),
       youtubeUrl: normalizeYoutubeUrl(youtubeUrl),
       visibility,
@@ -156,7 +196,9 @@ export default function EditPostForm(props: {
     }
 
     if (picked.length > remainingSlots) {
-      alert(`此貼文最多 5 張圖，目前已 ${existingImages.length} 張，還能上傳 ${remainingSlots} 張`);
+      alert(
+        `此貼文最多 ${MAX_FILES} 張圖，目前已 ${attachedUrls.length} 張，還能上傳 ${remainingSlots} 張`
+      );
       return;
     }
 
@@ -171,13 +213,14 @@ export default function EditPostForm(props: {
     setSaved(false);
 
     if (remainingSlots <= 0) {
-      alert("此貼文圖片已達上限（5 張）");
+      alert(`此貼文圖片已達上限（${MAX_FILES} 張）`);
       return;
     }
 
     setUploading(true);
     try {
-      const uploaded: { url: string; type: string; sortOrder: number }[] = [];
+      const uploadedItems: { url: string; type: string; sortOrder: number }[] = [];
+      const uploadedUrls: string[] = [];
 
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
@@ -185,10 +228,11 @@ export default function EditPostForm(props: {
         // 1) upload to server (server -> R2)
         const { publicUrl } = await uploadToServer(f);
 
-        uploaded.push({
+        uploadedUrls.push(publicUrl);
+        uploadedItems.push({
           url: publicUrl,
           type: "IMAGE",
-          sortOrder: existingImages.length + i,
+          sortOrder: attachedUrls.length + i,
         });
       }
 
@@ -196,7 +240,7 @@ export default function EditPostForm(props: {
       const attachRes = await fetch(`/api/admin/posts/${props.postId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: uploaded }),
+        body: JSON.stringify({ items: uploadedItems }),
       });
 
       const attachData = await attachRes.json().catch(() => ({}));
@@ -204,6 +248,9 @@ export default function EditPostForm(props: {
         setError(`寫入附件資料失敗：${attachData?.error ?? attachRes.status}`);
         return;
       }
+
+      // ✅ 立刻顯示：仿照 new/PostForm.tsx 的「上傳成功就顯示已上傳圖片」
+      setAttachedUrls((prev) => uniqUrls([...prev, ...uploadedUrls]));
 
       setFiles([]);
       startTransition(() => {
@@ -218,28 +265,45 @@ export default function EditPostForm(props: {
   }
 
   return (
-    <div className="space-y-8">
-      <form onSubmit={onSubmit} className="space-y-3">
-        {error ? (
-          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        ) : null}
+    <div className="space-y-6">
+      {error ? (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
 
-        {saved ? (
-          <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">已儲存變更。</div>
-        ) : null}
+      {saved ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+          已儲存變更。
+        </div>
+      ) : null}
 
+      {/* ✅ 貼文 ID（new 有顯示，edit 也補一致） */}
+      <div className="text-sm text-neutral-600">
+        貼文 ID：{" "}
+        <span className="font-mono break-all">{props.postId}</span>
+      </div>
+
+      {/* 內容 + YouTube + 可見性 */}
+      <section className="space-y-3">
         <textarea
           className="w-full rounded border p-3 h-60"
           placeholder="內容…（允許留空，只要你有圖片；若要全空請維持草稿）"
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => {
+            setContent(e.target.value);
+            setSaved(false);
+          }}
         />
 
         <input
           className="w-full rounded border p-2"
           placeholder="YouTube 連結（可留空）"
           value={youtubeUrl}
-          onChange={(e) => setYoutubeUrl(e.target.value)}
+          onChange={(e) => {
+            setYoutubeUrl(e.target.value);
+            setSaved(false);
+          }}
         />
 
         <div className="flex items-center gap-3">
@@ -261,30 +325,52 @@ export default function EditPostForm(props: {
           </select>
 
           <div className="text-xs text-neutral-500">
-            {visibility === "ADMIN_DRAFT" ? "草稿允許全空；其他狀態需至少文字或圖片。" : null}
+            {visibility === "ADMIN_DRAFT"
+              ? "草稿允許全空；其他狀態需至少文字或圖片。"
+              : null}
           </div>
         </div>
 
-        <button className="rounded bg-black px-4 py-2 text-white disabled:opacity-50" type="submit" disabled={isPending || !canSubmit}>
+        <button
+          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+          type="button"
+          onClick={() => {
+            // form submit but保持原本 onSubmit 行為
+            const fake = { preventDefault() {} } as any;
+            void onSubmit(fake);
+          }}
+          disabled={isPending || !canSubmit}
+        >
           {isPending ? "儲存中..." : "儲存變更"}
         </button>
-      </form>
+      </section>
 
+      {/* 圖片附件（仿照 new 的顯示方式） */}
       <section className="space-y-3">
         <div>
           <div className="font-semibold">圖片附件</div>
           <div className="text-sm text-neutral-600">
-            每篇最多 5 張，單張 ≤ 5MB（目前已有 {existingImages.length} 張，尚可上傳 {remainingSlots} 張）
+            每篇最多 {MAX_FILES} 張，單張 ≤ 5MB
+          </div>
+          <div className="text-sm text-neutral-600">
+            已附加：{attachedUrls.length} 張（尚可上傳 {remainingSlots} 張）
           </div>
         </div>
 
-        {existingImages.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2">
-            {existingImages.map((m) => (
-              <div key={m.id} className="rounded border overflow-hidden">
-                <img src={m.url} alt="image" className="w-full h-auto block" />
-              </div>
-            ))}
+        {/* ✅ 已附加圖片預覽：用 attachedUrls（上傳成功立刻顯示） */}
+        {attachedUrls.length > 0 ? (
+          <div className="space-y-2">
+            <div className="text-sm text-neutral-600">已上傳圖片預覽：</div>
+            <div className="grid grid-cols-2 gap-2">
+              {attachedUrls.map((url, idx) => (
+                <div
+                  key={`${url}-${idx}`}
+                  className="rounded border overflow-hidden"
+                >
+                  <img src={url} alt={`attached-${idx}`} className="w-full h-auto block" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="text-sm text-neutral-500">目前尚未上傳圖片。</div>
@@ -292,7 +378,7 @@ export default function EditPostForm(props: {
 
         <div className="space-y-2">
           <input
-            id="pick-images"
+            id="pick-images-edit"
             type="file"
             accept="image/*"
             multiple
@@ -302,9 +388,13 @@ export default function EditPostForm(props: {
           />
 
           <label
-            htmlFor="pick-images"
+            htmlFor="pick-images-edit"
             className={`inline-flex items-center justify-center rounded border px-4 py-2 text-sm
-            ${uploading || remainingSlots <= 0 ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-neutral-50"}`}
+            ${
+              uploading || remainingSlots <= 0
+                ? "opacity-50 cursor-not-allowed"
+                : "cursor-pointer hover:bg-neutral-50"
+            }`}
           >
             選擇圖片（最多 {remainingSlots} 張）
           </label>
@@ -321,14 +411,25 @@ export default function EditPostForm(props: {
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={uploadImages}
-                disabled={uploading}
-                className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-              >
-                {uploading ? "上傳中..." : "上傳圖片"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={uploadImages}
+                  disabled={uploading}
+                  className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+                >
+                  {uploading ? "上傳中..." : "上傳圖片"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFiles([])}
+                  disabled={uploading}
+                  className="rounded border px-4 py-2 text-sm disabled:opacity-50"
+                >
+                  清空已選
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
