@@ -32,9 +32,8 @@ export default function RootLayout({
   const pageShell =
     "min-h-screen bg-black text-white sm:bg-white sm:text-neutral-900";
 
-  // ✅ 寬度策略
-  // - 手機：吃滿（max-w-none）
-  // - 桌機：改成約原本 2/3（max-w-4xl）
+  // ✅ 手機：滿版（max-w-none）
+  // ✅ 桌機：改成較窄（lg:max-w-4xl ≈ 56rem）
   const container =
     "mx-auto w-full max-w-none px-3 py-5 sm:px-4 sm:py-8 lg:px-6 lg:max-w-4xl";
 

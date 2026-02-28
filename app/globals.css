@@ -35,14 +35,13 @@ body {
 }
 
 @layer components {
-  /* ✅ 統一卡片（調整圓角成前台一致的視覺：rounded-lg） */
+  /* ✅ 統一卡片：與前台首頁一致（rounded + p-4） */
   .as-card {
-    @apply rounded-lg bg-white text-neutral-900 border border-neutral-200;
-    @apply shadow-sm;
+    @apply rounded border bg-white text-neutral-900;
   }
 
   .as-card-pad {
-    @apply p-4 sm:p-5;
+    @apply p-4;
   }
 
   .as-card-stack {

@@ -174,7 +174,7 @@ export default async function HomePage() {
             const vis = visibilityIcon(String((p as any).visibility));
 
             return (
-              <article key={p.id} className="rounded border bg-white text-neutral-900 p-4 space-y-3">
+              <article key={p.id} className="as-card as-card-pad w-full space-y-3">
                 <Link
                   href={`/post/${p.id}`}
                   className={`block text-sm ${metaText} ${metaLink}`}
