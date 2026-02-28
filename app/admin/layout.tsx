@@ -2,17 +2,17 @@
 import type { ReactNode } from "react";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  // ✅ 後台 shell（維持你目前後台偏好）
-  // - 手機：黑底白字
-  // - 桌機：透明（讓外層白底顯示）
+  // ✅ 全站一致的 container（後台）
+  // - 手機：黑底白字（符合你目前後台偏好）
+  // - 桌機：透明（不要黑底，讓系統白底出來）
   const shell =
     "min-h-screen bg-black text-white sm:bg-transparent sm:text-neutral-900";
 
-  // ✅ 關鍵：後台不要鎖 max-w-2xl
-  // - 手機：滿版
-  // - 桌機：跟前台一致 max-w-4xl（約 2/3 寬）
-  const container =
-    "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8 sm:max-w-4xl";
+  // ✅ 關鍵修正：
+  // - 移除 max-w-2xl（它會讓後台比前台窄）
+  // - 手機滿版：max-w-none
+  // - 桌機收斂到較窄（你說要大約目前的 2/3）：max-w-3xl
+  const container = "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8 sm:max-w-3xl";
 
   return (
     <div className={shell}>
