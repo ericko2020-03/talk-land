@@ -82,6 +82,27 @@ function getYouTubeEmbedUrl(youtubeUrl?: string | null): string | null {
   )}?rel=0&modestbranding=1`;
 }
 
+// ✅ deterministic formatter: avoid toLocaleString() hydration mismatch
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+function formatZhTwDateTime(iso: string) {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+
+  const hh = d.getHours();
+  const mm = pad2(d.getMinutes());
+  const ss = pad2(d.getSeconds());
+
+  const ampm = hh < 12 ? "上午" : "下午";
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+
+  // format: 2026/3/1 上午2:42:33  (no locale-dependent spaces)
+  return `${y}/${m}/${day} ${ampm}${h12}:${mm}:${ss}`;
+}
+
 export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
   const router = useRouter();
 
@@ -121,12 +142,8 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
             <div
               className={`text-sm ${metaText} flex flex-wrap items-center gap-2`}
             >
-              <Link
-                className={`${metaLink}`}
-                href={adminViewHref}
-                title="後台查看"
-              >
-                {p.authorLabel} · {new Date(p.createdAt).toLocaleString("zh-TW")}
+              <Link className={`${metaLink}`} href={adminViewHref} title="後台查看">
+                {p.authorLabel} · {formatZhTwDateTime(p.createdAt)}
               </Link>
 
               <span
@@ -219,11 +236,7 @@ export default function AdminPostsListClient({ posts }: { posts: PostRow[] }) {
 
             {/* Action row (admin-only extra row) */}
             <div className="flex flex-wrap items-center gap-4 text-sm">
-              <Link
-                className="underline"
-                href={adminViewHref}
-                title={adminViewHref}
-              >
+              <Link className="underline" href={adminViewHref} title={adminViewHref}>
                 後台查看
               </Link>
 
