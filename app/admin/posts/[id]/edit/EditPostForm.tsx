@@ -1,7 +1,7 @@
 // path: app/admin/posts/[id]/edit/EditPostForm.tsx
 "use client";
 
-import { useMemo, useState, useTransition, useEffect } from "react";
+import { useMemo, useState, useTransition, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 type Visibility = "PUBLIC" | "LOGIN_ONLY" | "ADMIN_ONLY" | "ADMIN_DRAFT";
@@ -34,7 +34,7 @@ function visibilityLabel(v: Visibility) {
 
 async function uploadToServer(file: File) {
   const fd = new FormData();
-  fd.append("file", file); // IMPORTANT: must match API route.ts form.get("file")
+  fd.append("file", file);
 
   const res = await fetch("/api/upload", {
     method: "POST",
@@ -83,7 +83,7 @@ export default function EditPostForm(props: {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // media upload UI
+  // upload UI
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
 
@@ -95,12 +95,12 @@ export default function EditPostForm(props: {
     [props.initialMedia]
   );
 
-  // ✅ 立即顯示規則：成功上傳/attach 後，直接把 URL 加進這個 state（仿照 new/PostForm.tsx）
+  // ✅ 立即顯示：成功 attach 後，直接把 URL 加進 state（仿照 new/PostForm.tsx）
   const [attachedUrls, setAttachedUrls] = useState<string[]>(() =>
     uniqUrls(serverExistingImages.map((m) => m.url))
   );
 
-  // 當 server refresh 回來（props.initialMedia 更新）時，也同步 attachedUrls（避免 client 與 DB 不一致）
+  // 當 refresh 回來（props.initialMedia 更新）時同步，避免 client 與 DB 不一致
   useEffect(() => {
     setAttachedUrls((prev) =>
       uniqUrls([...prev, ...serverExistingImages.map((m) => m.url)])
@@ -109,13 +109,11 @@ export default function EditPostForm(props: {
   }, [serverExistingImages.map((m) => m.url).join("|")]);
 
   const remainingSlots = useMemo(() => {
-    // 以「已顯示的 attachedUrls」為準，避免剛上傳成功但尚未 refresh 時，還能繼續超過上限
     return Math.max(0, MAX_FILES - attachedUrls.length);
   }, [attachedUrls.length]);
 
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
 
-  // cleanup preview object URLs (avoid memory leak)
   useEffect(() => {
     return () => {
       previews.forEach((u) => URL.revokeObjectURL(u));
@@ -123,20 +121,139 @@ export default function EditPostForm(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previews.join("|")]);
 
+  // =========================
+  // ✅ Unsaved changes guard
+  // =========================
+  const initialRef = useRef({
+    content: String(props.initialContent ?? ""),
+    youtubeUrl: String(props.initialYoutubeUrl ?? ""),
+    visibility: (props.initialVisibility ?? "ADMIN_DRAFT") as Visibility,
+    attachedUrls: uniqUrls(serverExistingImages.map((m) => m.url)),
+  });
+
+  const isDirty = useMemo(() => {
+    const init = initialRef.current;
+
+    const c0 = String(init.content ?? "").trimEnd();
+    const c1 = String(content ?? "").trimEnd();
+
+    const y0 = String(init.youtubeUrl ?? "");
+    const y1 = String(youtubeUrl ?? "");
+
+    const v0 = init.visibility;
+    const v1 = visibility;
+
+    const a0 = uniqUrls(init.attachedUrls ?? []);
+    const a1 = uniqUrls(attachedUrls ?? []);
+
+    const imagesChanged =
+      a0.length !== a1.length || a0.some((u, i) => u !== a1[i]);
+
+    const pendingPickedFiles = files.length > 0;
+
+    return (
+      c0 !== c1 ||
+      y0 !== y1 ||
+      v0 !== v1 ||
+      imagesChanged ||
+      pendingPickedFiles
+    );
+  }, [content, youtubeUrl, visibility, attachedUrls, files.length]);
+
+  // 使用者儲存成功後，把「初始快照」更新成目前狀態，避免一直跳警告
+  const markSavedSnapshot = useCallback(() => {
+    initialRef.current = {
+      content: String(content ?? ""),
+      youtubeUrl: String(youtubeUrl ?? ""),
+      visibility,
+      attachedUrls: uniqUrls(attachedUrls ?? []),
+    };
+  }, [content, youtubeUrl, visibility, attachedUrls]);
+
+  // 1) 重新整理/關閉 tab：beforeunload
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
+  // 2) 點連結離開：攔截 <a href>
+  useEffect(() => {
+    function onDocumentClick(e: MouseEvent) {
+      if (!isDirty) return;
+      if (e.defaultPrevented) return;
+      if (e.button !== 0) return; // left click only
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+      const target = e.target as HTMLElement | null;
+      const a = target?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a) return;
+
+      const href = a.getAttribute("href") || "";
+      if (!href) return;
+
+      // 忽略：同頁 hash、外開、下載、mailto、tel
+      if (href.startsWith("#")) return;
+      if (a.target === "_blank") return;
+      if (href.startsWith("mailto:") || href.startsWith("tel:")) return;
+
+      // 對內部/外部連結都做提醒（你要的是「離開編輯頁之前」）
+      const ok = window.confirm("內容尚未儲存，確定要離開此頁嗎？");
+      if (!ok) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+
+    document.addEventListener("click", onDocumentClick, true);
+    return () => document.removeEventListener("click", onDocumentClick, true);
+  }, [isDirty]);
+
+  // 3) 返回鍵（popstate）提醒：取消就留在本頁
+  useEffect(() => {
+    // 建立一個 dummy state，讓第一次 back 觸發 popstate 可攔截
+    try {
+      history.pushState({ __edit_guard: true }, "", location.href);
+    } catch {
+      // ignore
+    }
+
+    function onPopState() {
+      if (!isDirty) return;
+      const ok = window.confirm("內容尚未儲存，確定要離開此頁嗎？");
+      if (!ok) {
+        try {
+          history.pushState({ __edit_guard: true }, "", location.href);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [isDirty]);
+
+  // =========================
+  // ✅ submit rules
+  // =========================
   const hasText = useMemo(() => content.trim().length > 0, [content]);
   const hasAnyImages = useMemo(
     () => attachedUrls.length > 0 || files.length > 0,
     [attachedUrls.length, files.length]
   );
 
-  // ✅ 送出規則：草稿可全空；非草稿需至少文字或圖片（沿用既有邏輯）
   const canSubmit = useMemo(() => {
     if (visibility === "ADMIN_DRAFT") return true;
     return hasText || hasAnyImages;
   }, [visibility, hasText, hasAnyImages]);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function saveChanges() {
     if (!canSubmit || isPending) return;
 
     setError(null);
@@ -172,7 +289,9 @@ export default function EditPostForm(props: {
       startTransition(() => {
         router.refresh();
       });
+
       setSaved(true);
+      markSavedSnapshot();
     } catch {
       setError("網路或伺服器連線失敗，請稍後再試。");
     }
@@ -203,6 +322,7 @@ export default function EditPostForm(props: {
     }
 
     setFiles(picked);
+    setSaved(false);
   }
 
   async function uploadImages() {
@@ -224,8 +344,6 @@ export default function EditPostForm(props: {
 
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-
-        // 1) upload to server (server -> R2)
         const { publicUrl } = await uploadToServer(f);
 
         uploadedUrls.push(publicUrl);
@@ -236,7 +354,6 @@ export default function EditPostForm(props: {
         });
       }
 
-      // 2) attach to post (DB)
       const attachRes = await fetch(`/api/admin/posts/${props.postId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -249,14 +366,17 @@ export default function EditPostForm(props: {
         return;
       }
 
-      // ✅ 立刻顯示：仿照 new/PostForm.tsx 的「上傳成功就顯示已上傳圖片」
+      // ✅ 成功上傳即顯示「已上傳圖片」
       setAttachedUrls((prev) => uniqUrls([...prev, ...uploadedUrls]));
 
       setFiles([]);
       startTransition(() => {
         router.refresh();
       });
+
       setSaved(true);
+      // 注意：上傳圖片也算「已保存到 DB」的一種，直接更新 snapshot，避免離頁一直警告
+      markSavedSnapshot();
     } catch (e: any) {
       setError(`上傳過程發生錯誤：${String(e?.message ?? e)}`);
     } finally {
@@ -278,10 +398,8 @@ export default function EditPostForm(props: {
         </div>
       ) : null}
 
-      {/* ✅ 貼文 ID（new 有顯示，edit 也補一致） */}
       <div className="text-sm text-neutral-600">
-        貼文 ID：{" "}
-        <span className="font-mono break-all">{props.postId}</span>
+        貼文 ID： <span className="font-mono break-all">{props.postId}</span>
       </div>
 
       {/* 內容 + YouTube + 可見性 */}
@@ -330,19 +448,6 @@ export default function EditPostForm(props: {
               : null}
           </div>
         </div>
-
-        <button
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-          type="button"
-          onClick={() => {
-            // form submit but保持原本 onSubmit 行為
-            const fake = { preventDefault() {} } as any;
-            void onSubmit(fake);
-          }}
-          disabled={isPending || !canSubmit}
-        >
-          {isPending ? "儲存中..." : "儲存變更"}
-        </button>
       </section>
 
       {/* 圖片附件（仿照 new 的顯示方式） */}
@@ -357,17 +462,17 @@ export default function EditPostForm(props: {
           </div>
         </div>
 
-        {/* ✅ 已附加圖片預覽：用 attachedUrls（上傳成功立刻顯示） */}
         {attachedUrls.length > 0 ? (
           <div className="space-y-2">
             <div className="text-sm text-neutral-600">已上傳圖片預覽：</div>
             <div className="grid grid-cols-2 gap-2">
               {attachedUrls.map((url, idx) => (
-                <div
-                  key={`${url}-${idx}`}
-                  className="rounded border overflow-hidden"
-                >
-                  <img src={url} alt={`attached-${idx}`} className="w-full h-auto block" />
+                <div key={`${url}-${idx}`} className="rounded border overflow-hidden">
+                  <img
+                    src={url}
+                    alt={`attached-${idx}`}
+                    className="w-full h-auto block"
+                  />
                 </div>
               ))}
             </div>
@@ -434,6 +539,18 @@ export default function EditPostForm(props: {
           ) : null}
         </div>
       </section>
+
+      {/* ✅ 依你的要求：儲存按鈕移到圖片區塊下方（對齊新增貼文） */}
+      <div className="pt-2">
+        <button
+          className="rounded bg-black px-5 py-2 text-white disabled:opacity-50"
+          type="button"
+          disabled={isPending || !canSubmit}
+          onClick={saveChanges}
+        >
+          {isPending ? "儲存中..." : "儲存變更"}
+        </button>
+      </div>
     </div>
   );
 }

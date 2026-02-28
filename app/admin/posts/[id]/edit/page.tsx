@@ -81,8 +81,9 @@ export default async function AdminEditPostPage({
           <Link className={topLink} href="/admin/posts">
             回文章列表
           </Link>
-          <Link className={topLink} href={`/post/${post.id}`}>
-            前台查看
+          {/* ✅ 依你的要求：右上角改回「回首頁」 */}
+          <Link className={topLink} href="/">
+            回首頁
           </Link>
         </nav>
       </header>
