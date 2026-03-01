@@ -25,13 +25,11 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // 手機黑底，桌機白底
   const pageShell =
     "min-h-screen bg-black text-white sm:bg-white sm:text-neutral-900";
 
-  // ✅ 桌機寬度：至少 1/2 螢幕，但不要無上限
-  // - sm: max-w 50vw（半螢幕）
-  // - lg: 再 cap 到 max-w-3xl（避免超大螢幕太寬）
+  // ✅ 手機：滿版（max-w-none）
+  // ✅ 桌機：半螢幕寬（50vw），並在大螢幕 cap 到 3xl 避免太寬
   const container =
     "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8 sm:max-w-[50vw] lg:max-w-3xl";
 
