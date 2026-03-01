@@ -29,10 +29,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const pageShell =
     "min-h-screen bg-black text-white sm:bg-white sm:text-neutral-900";
 
-  // ✅ 統一寬度與內距
-  // - 手機永遠滿版
-  // - 桌機：不要在 root layout 限制 max-width，避免把後台也一起鎖死
-  const container = "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8";
+  // ✅ 桌機寬度：至少 1/2 螢幕，但不要無上限
+  // - sm: max-w 50vw（半螢幕）
+  // - lg: 再 cap 到 max-w-3xl（避免超大螢幕太寬）
+  const container =
+    "mx-auto w-full max-w-none px-3 py-5 sm:px-6 sm:py-8 sm:max-w-[50vw] lg:max-w-3xl";
 
   return (
     <html lang="zh-Hant">
