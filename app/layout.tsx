@@ -1,6 +1,9 @@
 // path: app/layout.tsx
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import MobileCurtainFrame from "@/app/components/mobile/MobileCurtainFrame";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,7 +27,14 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const session = await getServerSession(authOptions);
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const pageShell =
     "min-h-screen bg-black text-white sm:bg-white sm:text-neutral-900";
 
@@ -40,7 +50,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <div className={pageShell}>
-          <main className={container}>{children}</main>
+          <MobileCurtainFrame isAdmin={isAdmin} containerClassName={container}>
+            {children}
+          </MobileCurtainFrame>
         </div>
       </body>
     </html>

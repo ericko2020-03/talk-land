@@ -113,13 +113,15 @@ export default async function HomePage() {
   // ✅ 外層（頁面背景）：
   // - 手機：黑底白字
   // - 桌機：回到白底系統（透明背景 + 深色字）
-  const pageShell = "space-y-6 bg-black text-white sm:bg-transparent sm:text-neutral-900";
+  const pageShell =
+    "space-y-6 bg-black text-white sm:bg-transparent sm:text-neutral-900";
 
-  const topLink = "underline text-white hover:text-white/80 sm:text-neutral-900 sm:hover:text-neutral-700";
+  const topLink =
+    "underline text-white hover:text-white/80 sm:text-neutral-900 sm:hover:text-neutral-700";
 
   return (
     <div className={pageShell}>
-      <header className="flex items-center justify-between">
+      <header className="hidden items-center justify-between sm:flex">
         <h1 className="text-2xl font-bold text-white sm:text-neutral-900">
           Allensay_s 社群
         </h1>

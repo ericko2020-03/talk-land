@@ -4,6 +4,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Mobile curtain sizes */
+  --as-mobile-top-curtain-h: 56px;
+  --as-mobile-bottom-curtain-h: 56px;
 }
 
 @theme inline {
@@ -46,5 +50,33 @@ body {
 
   .as-card-stack {
     @apply space-y-4;
+  }
+}
+
+/* =========================
+   Mobile Curtain Utilities
+   ========================= */
+@media (max-width: 639px) {
+  .as-mobile-curtain-top {
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--as-mobile-top-curtain-h) + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .as-mobile-curtain-bottom {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--as-mobile-bottom-curtain-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .as-mobile-content-frame {
+    padding-top: calc(var(--as-mobile-top-curtain-h) + env(safe-area-inset-top));
+    padding-bottom: calc(
+      var(--as-mobile-bottom-curtain-h) + env(safe-area-inset-bottom)
+    );
   }
 }
