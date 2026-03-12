@@ -10,31 +10,65 @@ Allensay_s is designed as a scalable creator-community platform supporting publi
 
 Stage: Active Development  
 Architecture Level: SaaS-Ready  
-Documentation Level: Enterprise Transfer Document  
 
 ---
 
-# Core Goals
+# Tech Stack
 
-Allensay_s aims to become a platform for:
-
-• community publishing  
-• creator-audience interaction  
-• membership-based content  
-• future subscription economy  
+| Layer | Technology |
+|------|-------------|
+Frontend | Next.js 16 App Router |
+Language | TypeScript |
+Styling | TailwindCSS |
+Auth | NextAuth |
+ORM | Prisma |
+Database | PostgreSQL (Neon) |
+Storage | Cloudflare R2 |
+Deployment | Vercel |
 
 ---
 
-# System Architecture
+# Documentation
 
-```mermaid
-flowchart TD
+Full technical documentation is located in `/docs`.
 
-Browser --> NextAppRouter
-NextAppRouter --> API
-API --> Prisma
-Prisma --> PostgreSQL
-NextAppRouter --> R2Storage
+| Document | Description |
+|---|---|
+Architecture | /docs/architecture.md |
+Database Schema | /docs/database.md |
+Security Model | /docs/security.md |
+Deployment Guide | /docs/deployment.md |
 
-NextAppRouter --> Auth
-Auth --> RBAC
+---
+
+# Development Setup
+
+Clone repository
+
+```
+git clone <repo>
+```
+
+Install dependencies
+
+```
+npm install
+```
+
+Generate Prisma client
+
+```
+npx prisma generate
+```
+
+Run development server
+
+```
+npm run dev
+```
+
+---
+
+# License
+
+MIT License
